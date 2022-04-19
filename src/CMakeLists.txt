@@ -86,6 +86,11 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
 # Enable RDC for the target
 set_property(TARGET ${PROJECT_NAME} PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 
+# Link against dl if available. This used to be implied from somewhere...
+if(CMAKE_DL_LIBS)
+    target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_DL_LIBS})
+endif()
+
 # Set target level warnings.
 EnableFLAMEGPUCompilerWarnings(TARGET "${PROJECT_NAME}")
 # Apply common compiler settings
