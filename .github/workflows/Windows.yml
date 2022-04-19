@@ -1,0 +1,97 @@
+# Compile project on Windows
+name: Windows
+
+on:
+  # Branch pushes that do not only modify other workflow files
+  push:
+    branches:
+      - '**'
+    paths:
+      - "**"
+      - "!.github/**"
+      - ".github/scripts/install_cuda_windows.ps1"
+      - ".github/workflows/Windows.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ${{ matrix.cudacxx.os }}
+    strategy:
+      fail-fast: false
+      # Multiplicative build matrix
+      # optional exclude: can be partial, include: must be specific
+      matrix:
+        cudacxx:
+          - cuda: "11.6.0"
+            cuda_arch: "35"
+            hostcxx: "Visual Studio 16 2019"
+            os: windows-2019
+          - cuda: "11.0.3"
+            cuda_arch: "35"
+            hostcxx: "Visual Studio 16 2019"
+            os: windows-2019
+        config:
+          - name: "Release"
+            config: "Release"
+            SEATBELTS: "ON"
+
+    # Name the job based on matrix/env options
+    name: "build (${{ matrix.cudacxx.cuda }}, ${{ matrix.config.name }}, ${{ matrix.cudacxx.os }})"
+
+    # Define job-wide env constants, and promote matrix elements to env constants for portable steps.
+    env:
+      # Define constants
+      BUILD_DIR: "build"
+      # Tests are off for regular builds, but if initiated by a workflow dispatch then they are enabled. Horribly json terriarry to achieve
+      # BUILD_TESTS: ${{ fromJSON('{true:"ON",false:"OFF"}')[github.event_name == 'workflow_dispatch' && matrix.VISUALISATION == 'OFF'] }}
+      # Port matrix options to environment, for more portability.
+      CUDA: ${{ matrix.cudacxx.cuda }}
+      CUDA_ARCH: ${{ matrix.cudacxx.cuda_arch }}
+      HOSTCXX: ${{ matrix.cudacxx.hostcxx }}
+      OS: ${{ matrix.cudacxx.os }}
+      CONFIG: ${{ matrix.config.config }}
+      # SEATBELTS: ${{ matrix.config.SEATBELTS }}
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install CUDA (Windows)
+      if: ${{ runner.os == 'Windows' && env.CUDA != '' }}
+      shell: powershell
+      env:
+        cuda: ${{ env.CUDA }}
+        visual_studio: ${{ env.HOSTCXX }}
+      run: .github\scripts\install_cuda_windows.ps1
+
+    - name: Add custom problem matchers for annotations
+      run: echo "::add-matcher::.github/problem-matchers.json"
+
+    # Must pass -G -A for windows, and -DPython3_ROOT_DIR/-DPYTHON3_EXECUTABLE as a github action workaround
+    - name: Configure cmake
+      run: >
+        cmake . -B "${{ env.BUILD_DIR }}" 
+        -G "${{ env.HOSTCXX }}" -A x64
+        -Werror=dev
+        -DCMAKE_WARN_DEPRECATED="OFF"
+        -DWARNINGS_AS_ERRORS="ON"
+        -DCUDA_ARCH="${{ env.CUDA_ARCH }}"
+        -DUSE_NVTX="ON"
+
+    - name: Build static library
+      working-directory: ${{ env.BUILD_DIR }}
+      run: cmake --build . --config ${{ env.CONFIG }} --target cuRVE --verbose -j `nproc`
+
+    # - name: Build tests
+    #   if: ${{ env.BUILD_TESTS == 'ON' }}
+    #   working-directory: ${{ env.BUILD_DIR }}
+    #   run: cmake --build . --config ${{ env.CONFIG }} --target tests --verbose -j `nproc`
+
+    - name: Build all remaining targets
+      working-directory: ${{ env.BUILD_DIR }}
+      run: cmake --build . --config ${{ env.CONFIG }} --target ALL_BUILD --verbose -j `nproc`
+
+
