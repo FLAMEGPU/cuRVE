@@ -152,6 +152,7 @@ cmake --build . --config Release --target flamegpu boids_bruteforce --verbose
 | `CUDA_ARCH`              | `"52 60 70 80"`                                 | Select [CUDA Compute Capabilities](https://developer.nvidia.com/cuda-gpus) to build/optimise for, as a space or `;` separated list. Defaults to `""` |
 | `USE_NVTX`               | `ON`/`OFF`                                      | Enable NVTX markers for improved profiling. Default `OFF`                                                                                            |
 | `WARNINGS_AS_ERRORS`     | `ON`/`OFF`                                      | Promote compiler/tool warnings to errors are build time. Default `OFF`                                                                               |
+| `VERBOSE_PTXAS`          | `ON`/`OFF`                                      | Enable verbose PTXAS output. Default `OFF`                                                                               |
 
 For a list of available CMake configuration options, run the following from the `build` directory:
 

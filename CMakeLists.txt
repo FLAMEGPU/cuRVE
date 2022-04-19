@@ -32,6 +32,9 @@ endif()
 # Option to enable/disable NVTX markers for improved profiling
 option(USE_NVTX "Build with NVTX markers enabled" ON)
 
+# Option to enable verbose ptxas output for kernel register use 
+option(VERBOSE_PTXAS "Enable Verbose PTXAS output during compilation" OFF)
+
 # Control target CUDA_ARCH to compile for. This could be migrated to the CMake > 3.18 way of doing this (exluding LTO support)
 SET(CUDA_ARCH "${CUDA_ARCH}" CACHE STRING "List of CUDA Architectures to target. E.g. 61;70" FORCE)
 
