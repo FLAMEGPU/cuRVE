@@ -28,6 +28,11 @@ if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS ${MINIMUM_CUDA_VERSION})
     message(STATUS "Documentation-only build: CUDA ${MINIMUM_SUPPORTED_CUDA_VERSION} or greater is required for compilation.")
 endif()
 
+# Option to enable/disable NVTX markers for improved profiling
+option(BUILD_EXAMPLE "Build the simple example demonstrating use of cuRVE" ON)
+
+# Option to enable/disable NVTX markers for improved profiling
+option(BUILD_BENCHMARK "Build the benchmark example demonstrating performance in an ABM-like use-case" ON)
 
 # Option to enable/disable NVTX markers for improved profiling
 option(USE_NVTX "Build with NVTX markers enabled" ON)
@@ -44,4 +49,11 @@ add_subdirectory(src "${PROJECT_BINARY_DIR}/cuRVE")
 set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"  PROPERTY VS_STARTUP_PROJECT cuRVE)
 
 # Add the example as a separate subdirectory
-add_subdirectory(example)
+if(BUILD_EXAMPLE)
+    add_subdirectory(example)
+endif()
+
+# Add the benchmark as a separate subdirectory / target
+if(BUILD_BENCHMARK)
+    add_subdirectory(benchmark)
+endif()
