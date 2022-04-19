@@ -175,7 +175,7 @@ std::tuple<cudaFuncAttributes, cudaFuncAttributes> getKernelAttributes() {
  * @return elapsed time in seconds
  */
 double initialiseCuRVE(const uint32_t AGENT_COUNT) {
-    NVTX_RANGE("launchAgentOutput");
+    NVTX_RANGE("initialiseCuRVE");
     // Get a timer
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
     // Start recording the time
@@ -375,8 +375,8 @@ int main(int argc, char * argv[]) {
     // @todo - arg parsing from command line / configuraiton file.
     // @todo - multiple agent count / message counts?
     const uint32_t REPETITIONS = 3u;
-    const uint32_t AGENT_COUNT = 2048u;
-    const uint32_t MESSAGE_COUNT = AGENT_COUNT;
+    // const uint32_t AGENT_COUNT = 2048u;
+    // const uint32_t MESSAGE_COUNT = AGENT_COUNT;
     const uint64_t SEED = 12u;
     const uint32_t DEVICE = 0u;
     const uint32_t ITERATIONS = 8u;
@@ -396,6 +396,9 @@ int main(int argc, char * argv[]) {
     if (VERBOSE) {
         printf("GPU %d: %s, SM_%d%d, CUDA %d.%d, maxResidentThreads %d\n", DEVICE, props.name, props.major, props.minor, CUDART_VERSION/1000, CUDART_VERSION/10%100, maxResidentThreads);
     }
+
+    const uint32_t AGENT_COUNT = maxResidentThreads;
+    const uint32_t MESSAGE_COUNT = AGENT_COUNT;
 
     // Get the register use for each function
     auto [agentOutputAttribtues, agentInputAttributes] = getKernelAttributes();

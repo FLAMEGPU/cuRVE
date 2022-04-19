@@ -28,12 +28,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line) {
 }
 
 /**
- * Error check function for safe CUDA Driver API calling
- * Wrap any cuda drive API calls with this macro to automatically check the returned CUresult
- */
-#define gpuErrchkDriverAPI(ans) { util::gpuAssert((ans), __FILE__, __LINE__); }
-
-/**
  * Error check function for use after asynchronous methods
  * Call this macro function after async calls such as kernel launches to automatically check the latest error
  * In debug builds this will perform a synchronisation to catch any errors, in non-debug builds errors may be propagated.
