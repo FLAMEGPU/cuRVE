@@ -1,6 +1,8 @@
 # cuRVE : The CUDA Runtime Variable Environment
 
 [![MIT License](https://img.shields.io/apm/l/atomic-design-ui.svg?)](https://github.com/FLAMEGPU/cuRVE/blob/master/LICENSE.MD)
+[![Ubuntu](https://github.com/FLAMEGPU/cuRVE/actions/workflows/Ubuntu.yml/badge.svg)](https://github.com/FLAMEGPU/cuRVE/actions/workflows/Ubuntu.yml)
+[![Windows](https://github.com/FLAMEGPU/cuRVE/actions/workflows/Windows.yml/badge.svg)](https://github.com/FLAMEGPU/cuRVE/actions/workflows/Windows.yml)
 
 ## Overview
 
