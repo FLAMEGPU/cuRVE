@@ -1,5 +1,7 @@
 # cuRVE : The CUDA Runtime Variable Environment
 
+[![MIT License](https://img.shields.io/apm/l/atomic-design-ui.svg?)](https://github.com/FLAMEGPU/cuRVE/blob/master/LICENSE.MD)
+
 ## Overview
 
 The CUDA Runtime Variable Environment (curRVE) is a library which provides key-value memory management and access for CUDA global device memory.
@@ -179,3 +181,7 @@ I.e. for a `Release` build of the `example`, run:
 ```bash
 ./bin/Release/example --help
 ```
+
+## License
+
+FLAME GPU is distributed under the [MIT Licence](https://github.com/FLAMEGPU/cuRVE/blob/master/LICENSE.md).
