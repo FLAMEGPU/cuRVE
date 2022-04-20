@@ -12,16 +12,14 @@
 #include <tuple>
 #include <vector>
 #include <string>
+#include <random>
 
 #include "cuda_runtime.h"
 
 // CLI library
 #include <CLI/CLI.hpp>
 
-// Include the curve header
-#include "curve.h"
-
-// Include a number of utilty classes to simplify code in the example itself.
+// Include a number of utilty classes to simplify code in the benchmark itself
 #include "util/Timer.h"
 #include "util/SteadyClockTimer.h"
 #include "util/CUDAErrorChecking.cuh"
@@ -29,6 +27,9 @@
 #include "util/wddm.cuh"
 #include "util/nvtx.h"
 #include "util/OutputCSV.hpp"
+
+// Include the curve header
+#include "curve.h"
 
 // Anonymous namespace for locally scoped global state
 namespace {
@@ -217,14 +218,13 @@ double initialiseData(const uint64_t SEED, const uint32_t AGENT_COUNT) {
     // Start recording the time
     timer->start();
 
-    // @todo - use modern PRNG
-    // @todo seed the prng.
-
+    std::mt19937_64 prng(SEED);
+    std::uniform_real_distribution<float> a_dist(0.f, 1.f);
     // Initialise data
     for (uint32_t idx = 0u; idx < AGENT_COUNT; idx++)
 	{   
-    	float a = rand()/(float)RAND_MAX;
-		float b = (float) idx;
+    	float a = a_dist(prng);
+		float b = static_cast<float>(idx);
     	curveSetFloat(AGENT_A, a, idx);
 		curveSetFloat(AGENT_B, b, idx);
 		curveSetFloat(AGENT_C, 0, idx);
