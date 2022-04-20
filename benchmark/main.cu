@@ -125,19 +125,19 @@ double initialiseGPUContext(int deviceIdx) {
         exit(EXIT_FAILURE);
     }
     // Error if the requested device is out of range
-    if (deviceIdx > deviceCount) {
-        fprintf(stderr, "Error: device %d > %d\n", deviceIdx, deviceCount);
+    if (deviceIdx >= deviceCount) {
+        fprintf(stderr, "Error: Invalid CUDA device index %d. %d devices visible.\n", deviceIdx, deviceCount);
         fflush(stderr);
         exit(EXIT_FAILURE);
     } else if (deviceIdx < 0) {
-        fprintf(stderr, "Error: device %d is invalid\n", deviceIdx);
+        fprintf(stderr, "Error: CUDA deivce index must be non-negative (%d < 0)\n", deviceIdx);
         fflush(stderr);
         exit(EXIT_FAILURE);
     }
     // Attempt to set the device 
     cudaStatus = cudaSetDevice(deviceIdx);
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "Error occured setting CUDA device to '%d'. (%d available)", deviceIdx, deviceCount);
+        fprintf(stderr, "Error occured setting CUDA device to '%d'. (%d available)\n", deviceIdx, deviceCount);
         fflush(stderr);
         exit(EXIT_FAILURE);
     }
@@ -315,9 +315,10 @@ double launchAgentInput(const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT
  * @param ITERATIONS the number of mock simulation iterations to run
  * @param AGENT_COUNT the number of agents in the mock simulation
  * @param MESSAGE_COUNT the number of messages to consider within the mock simulation
- * @return A tuple containing the simulation elapsed time in seconds, and a vector of tuples, containing the per-iteration time and the per mock agent function per iteration.
+ * @param VERBOSITY The degree of verbosity for output, 0 = none, 1 = verbose, 3 = very verbose
+ * @return A tuple containing the simulation elapsed time in seconds, mean time per mock agent function and a vector of tuples, containing the per-iteration time and the per mock agent function per iteration.
  */ 
-std::tuple<double, std::vector<std::tuple<double, double>>> mockSimulation(const uint32_t ITERATIONS, const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT) {
+std::tuple<double, double, double, std::vector<std::tuple<double, double>>> mockSimulation(const uint32_t ITERATIONS, const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT, const uint32_t VERBOSITY) {
     NVTX_RANGE("__func__");
     // Get a timer
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
@@ -337,13 +338,137 @@ std::tuple<double, std::vector<std::tuple<double, double>>> mockSimulation(const
 
         // Record the times for later
         perIterationElapsed.push_back({outputSeconds, inputSeconds});
+
+        if (VERBOSITY > 1) {
+            fprintf(stdout, "time: [%u] agentOutput  %.6f s\n", iteration, outputSeconds);
+            fprintf(stdout, "time: [%u] agentInput   %.6f s\n", iteration, inputSeconds);
+        }
     }
 
     // Get the total simulation elapsed time 
     timer->stop();
     double simulationElapsed = timer->getElapsedSeconds();
+
+    // Get the mean per iteration times.
+    double outputSecondsTotal = 0.0;
+    double inputSecondsTotal = 0.0;
+    for (auto [outputSeconds, inputSeconds] : perIterationElapsed) {
+        outputSecondsTotal += outputSeconds;
+        inputSecondsTotal += inputSeconds;
+    }
+    double outputSecondsMean = outputSecondsTotal / perIterationElapsed.size();
+    double inputSecondsMean = inputSecondsTotal / perIterationElapsed.size();
     // Return the timing information
-    return {simulationElapsed, perIterationElapsed};
+    return {simulationElapsed, outputSecondsMean, inputSecondsMean, perIterationElapsed};
+}
+
+/**
+ * Struct containing CLI arguments
+ * default values are controlled here.
+ */
+struct CLIArgs {
+    uint32_t DEVICE = 0u;
+    uint64_t SEED = 0u; 
+    uint32_t REPETITIONS = 3u;
+    uint32_t ITERATIONS = 8u;
+    uint32_t AGENT_COUNT = 2u << 13;
+    float MESSAGE_FRACTION = 1.f;
+    bool FULL_DEVICE = false;
+    uint32_t VERBOSITY = false;
+
+    void print(FILE* fp) const {
+        if (fp != nullptr) {
+            fprintf(fp, "CLIArgs:\n");
+            fprintf(fp, "  DEVICE %u\n", DEVICE);
+            fprintf(fp, "  SEED %zu\n", SEED);
+            fprintf(fp, "  REPETITIONS %u\n", REPETITIONS);
+            fprintf(fp, "  ITERATIONS %u\n", ITERATIONS);
+            fprintf(fp, "  AGENT_COUNT %u\n", AGENT_COUNT);
+            fprintf(fp, "  MESSAGE_FRACTION %.3f\n", MESSAGE_FRACTION);
+            fprintf(fp, "  FULL_DEVICE %d\n", FULL_DEVICE);
+            fprintf(fp, "  VERBOSITY %d\n", VERBOSITY);
+            fflush(fp);
+        }
+    }
+};
+
+/**
+ * Define and process the CLI
+ */
+CLIArgs cli(int argc, char * argv[]) {
+    NVTX_RANGE(__func__);
+
+    // Declare the struct which will be populated with values 
+    CLIArgs args = {};
+    
+    // Define the CLI11 object
+    CLI::App app{"cuRVE ABM-like benchmark"};
+
+    // Define each cli flag, including setting default values.
+    app.add_option(
+        "-d,--device",
+        args.DEVICE,
+        "select the GPU to use"
+        )->default_val(args.DEVICE);
+    app.add_option(
+        "-s,--seed",
+        args.SEED,
+        "PRNG seed"
+        )->default_val(args.SEED);
+    app.add_option(
+        "-r,--repetitions",
+        args.REPETITIONS,
+        "The number of repetitions for performance averaging"
+        )->default_val(args.REPETITIONS);
+    app.add_option(
+        "-i,--iterations",
+        args.ITERATIONS,
+        "number of mock simulation iterations"
+        )->default_val(args.ITERATIONS);
+    app.add_option(
+        "-m,--message-fraction",
+        args.MESSAGE_FRACTION,
+        "The fraction of 'messages' read by each 'agent'"
+        )->default_val(args.MESSAGE_FRACTION)->expected(0.0,1.0);
+
+    // default_val counts as a value, even when not passed so cannot use group / excludes for these. I'm not loving CLI11.
+    auto group = app.add_option_group("Scale");
+    group->add_option(
+        "-c,--agent-count",
+        args.AGENT_COUNT,
+        "The number of 'agents' (threads)"
+        )->default_val(args.AGENT_COUNT);
+    group->add_flag(
+        "--full-device",
+        args.FULL_DEVICE,
+        "Use the maximum number of resident threads for the selected GPU"
+        );
+    // Require 0 or 1 of these options.
+    group->require_option(0, 1); 
+
+    app.add_flag(
+        "-v,--verbose",
+        args.VERBOSITY,
+        "Enable verbose output. Repeat for extra verbosity (2 levels?)"
+        );
+    // app.add_flag("--append", append, "Append to the output file?");
+    // app.add_flag("--overwrite", append, "Append to the output file?");
+    // CLI::Option *opt = app.add_option("-f,--file,file", file, "File name");
+
+    // Attempt to parse the CLI, exiting if an exception is thrown by CLI11
+    try {
+        app.parse(argc, argv);
+    } catch (const CLI::ParseError &e) {
+        std::exit(app.exit(e));
+    }
+
+    // If verbose, print the args
+    if (args.VERBOSITY > 0) {
+        args.print(stdout);
+    }
+
+    // Return the struct
+    return args;
 }
 
 /**
@@ -355,115 +480,49 @@ std::tuple<double, std::vector<std::tuple<double, double>>> mockSimulation(const
 int main(int argc, char * argv[]) {
     NVTX_RANGE(__func__);
 
-    // Setup CLI interface
-    // @todo - split this to it's own method, which returns a struct of the populated CLI?
-    // @todo - multiple agent count / message counts in a single execution?
-    // @todo - YAML configuration file?
-    CLI::App cli{"cuRVE ABM-like benchmark"};
+    // Process CLI arguments
+    const CLIArgs args = cli(argc, argv);
 
-    // Variables for cli parsing results to be written into, initalised to their defualt values
-    uint32_t device = 0;
-    uint64_t seed = 12u; 
-    uint32_t repetitions {3u};
-    uint32_t iterations = 8u;
-    uint32_t agent_count = 4096u;
-    float message_fraction = 1.f;
-    bool full_device = false;
-    bool verbose = false;
-    // bool append_output = false; // @todo
-    // bool overwrite_output = false; // @todo
-    // std::string output_filepath = {}; // @todo
-    // std::string config_filepath = {}; // @todo
-
-    cli.add_flag("-d,--device", device, "select the GPU to use, defaults to 0")->default_val(device);
-    cli.add_flag("-s,--seed", seed, "PRNG seed, defaults to 0")->default_val(seed);
-    cli.add_flag("-r,--repetitions", repetitions, "The number of repetitions to run")->default_val(repetitions);
-    cli.add_flag("-i,--iterations", iterations, "number of iterations/steps/ticks per mock simulation")->default_val(iterations);
-
-
-    cli.add_flag("-c,--agent-count", agent_count, "number of agents")->default_val(agent_count);
-    cli.add_flag("--full-device", full_device, "Override the agent count, launching the maximum number of resident threads for the selected GPU");
-    cli.add_flag("--message-fraction", message_fraction, "The number of 'messages' read by each agent")->default_val(message_fraction);
-
-
-    // default_val counts as a value, even when not passed so cannot use group / excludes for these. I'm not loving CLI11.
-    // auto group = cli.add_option_group("subgroup");
-    // group->add_flag("-c,--agent-count", agent_count, "number of agents")->default_val(agent_count);
-    // group->add_flag("--full-device", full_device, "Override the agent count, launching the maximum number of resident threads for the selected GPU");
-    // group->require_option(1); 
-
-
-    cli.add_flag("-v,--verbose", verbose, "Enable verbose output");
-    // cli.add_flag("--append", append, "Append to the output file?");
-    // cli.add_flag("--overwrite", append, "Append to the output file?");
-    // CLI::Option *opt = app.add_option("-f,--file,file", file, "File name");
-
-    // Attempt to parse the CLI, exiting if an exception is thrown by CLI11
-    try {
-        cli.parse(argc, argv);
-    } catch (const CLI::ParseError &e) {
-        return cli.exit(e);
-    }
-
-    // create const'd versions of cli stuff. @todo - do this nicer.
-    const uint32_t DEVICE = device;
-    const uint64_t SEED = seed;
-    const uint32_t REPETITIONS = repetitions;
-    const uint32_t ITERATIONS = iterations;
-    // const uint32_t AGENT_COUNT = agent_count;
-    const float MESSAGE_FRACTION = message_fraction;
-    const bool FULL_DEVICE = full_device;
-    const bool VERBOSE = verbose;
-
-    if (VERBOSE) {
-        printf("cli: DEVICE %u\n", DEVICE);
-        printf("cli: SEED %zu\n", SEED);
-        printf("cli: REPETITIONS %u\n", REPETITIONS);
-        printf("cli: ITERATIONS %u\n", ITERATIONS);
-        printf("cli: agent_count %u\n", agent_count);
-        printf("cli: MESSAGE_FRACTION %.3f\n", MESSAGE_FRACTION);
-        printf("cli: FULL_DEVICE %d\n", FULL_DEVICE);
-        printf("cli: VERBOSE %d\n", VERBOSE);
-    }
+    // Get the CUDA major and minor versions as integers
+    constexpr int CUDA_MAJOR = CUDART_VERSION / 1000;
+    constexpr int CUDA_MINOR = CUDART_VERSION / 10%100;
 
     // Select the device, and create a context, returning the time.
-    double deviceInitialisationSeconds = initialiseGPUContext(DEVICE);
-    if (VERBOSE) {
-        printf("deviceInitialisationSeconds %.6f s\n", deviceInitialisationSeconds);
-    }
-    
-    // Get device properties
-    cudaDeviceProp props = getGPUProperties(DEVICE);
-    const int maxResidentThreads = props.maxThreadsPerMultiProcessor * props.multiProcessorCount;
-    if (VERBOSE) {
-        printf("GPU %d: %s, SM_%d%d, CUDA %d.%d, maxResidentThreads %d\n", DEVICE, props.name, props.major, props.minor, CUDART_VERSION/1000, CUDART_VERSION/10%100, maxResidentThreads);
-    }
+    double deviceInitialisationSeconds = initialiseGPUContext(args.DEVICE);
 
-    // Can only set the const'd agent count after getting the number of resident threads.
-    const uint32_t AGENT_COUNT = FULL_DEVICE ? maxResidentThreads : agent_count;
-    // For now, always use the full mesage count.
-    const uint32_t MESSAGE_COUNT = std::round(AGENT_COUNT * message_fraction);
-    if (VERBOSE) {
-        printf("AGENT_COUNT %u, MESSAGE_COUNT %u, FULL_DEVICE %d\n", AGENT_COUNT, MESSAGE_COUNT, FULL_DEVICE);
-    }
+    // Query some device properties
+    cudaDeviceProp props = getGPUProperties(args.DEVICE);
 
-    // Get the register use for each function
+    // Compute the maximum resident threads for the selected device, for verbose output / agent population
+    const uint32_t maxResidentThreads = props.maxThreadsPerMultiProcessor * props.multiProcessorCount;
+
+    // Get the register use of the two kernels for the current device, for verbose/csv output
     auto [agentOutputAttribtues, agentInputAttributes] = getKernelAttributes();
-    if (VERBOSE) {
-        printf("Register use: agentOutput %d, agentInput %d\n", agentOutputAttribtues.numRegs, agentInputAttributes.numRegs);
 
-    }
+    // Compute the number of threads / agent count to actually use, based on CLI + device properties
+    const uint32_t AGENT_COUNT = args.FULL_DEVICE ? maxResidentThreads : args.AGENT_COUNT;
+    // Compute the number of messages to read
+    const uint32_t MESSAGE_COUNT = std::min(static_cast<uint32_t>(std::round(AGENT_COUNT * args.MESSAGE_FRACTION)), AGENT_COUNT);
 
     // Detect if WDDM is being used, so the most appropraite timer can be used (cudaEvent for linux/tcc, steady clock on windows). Update the anon namespace var.
     deviceUsingWDDM = util::wddm::deviceIsWDDM();
-    if (VERBOSE) {
-        if (deviceUsingWDDM) {
-            printf("Device is not WDDM, using CUDAEventTimer\n");
-        } else {
-            printf("Device is WDDM, using SteadyClockTimer\n");
-        }
-    }
 
+    // Print verbose output about the current benchmark
+    if (args.VERBOSITY > 0) {
+        fprintf(stdout, "CUDA %d.%d\n", CUDA_MAJOR, CUDA_MINOR);
+        fprintf(stdout, "GPU %u: %s, SM_%d%d\n", args.DEVICE, props.name, props.major, props.minor);
+        fprintf(stdout, "maxResidentThread: %u\n", maxResidentThreads);
+        fprintf(stdout, "AGENT_COUNT:       %u (FULL_DEVICE %d)\n", AGENT_COUNT, args.FULL_DEVICE);
+        fprintf(stdout, "MESSAGE_COUNT:     %u\n", MESSAGE_COUNT);
+        fprintf(stdout, "agentOutput registers: %d\n", agentOutputAttribtues.numRegs);
+        fprintf(stdout, "agentInput  registers: %d\n", agentInputAttributes.numRegs);
+        if (!deviceUsingWDDM) {
+            fprintf(stdout, "WDDM=False, using CUDAEventTimer\n");
+        } else {
+            fprintf(stdout, "WDDM=True,  using SteadyClockTimer\n");
+        }
+        fprintf(stdout, "time: deviceInitialisation: %.6f s\n", deviceInitialisationSeconds);
+    }
 
     // Prep an object for handling the CSV output, so to de-noise the miniapp
     // @todo not stdout
@@ -472,73 +531,59 @@ int main(int argc, char * argv[]) {
 
 
     // For up to the right number of repetitions
-    for (uint32_t repetition = 0; repetition < REPETITIONS; repetition++) {
+    for (uint32_t repetition = 0; repetition < args.REPETITIONS; repetition++) {
+        NVTX_RANGE("repetition " + repetition);
         // Initialise curve
         double initialiseCuRVESeconds = initialiseCuRVE(AGENT_COUNT);
-        if (VERBOSE) {
-            printf("initialiseCuRVE %.6f s\n", deviceInitialisationSeconds);
-        }
 
         // Re-seed the RNG and gnerate initial state
-        double initialiseDataSeconds = initialiseData(SEED, AGENT_COUNT);
-        if (VERBOSE) {
-            printf("initialiseData %.6f s\n", initialiseDataSeconds);
+        double initialiseDataSeconds = initialiseData(args.SEED, AGENT_COUNT);
+
+        // If verbose, output pre-simulation timing info. 
+        if (args.VERBOSITY > 0) {
+            fprintf(stdout, "time: initialiseCuRVE  %.6f s\n", initialiseCuRVESeconds);
+            fprintf(stdout, "time: initialiseData   %.6f s\n", initialiseDataSeconds);
         }
 
         // Run the mock simulation
-        auto [mockSimulationSeconds, perIterationElapsed] = mockSimulation(ITERATIONS, AGENT_COUNT, MESSAGE_COUNT);
-        // Get the mean per itartion times.
-        double outputSecondsTotal = 0.0;
-        double inputSecondsTotal = 0.0;
-        for (auto [outputSeconds, inputSeconds] : perIterationElapsed) {
-            outputSecondsTotal += outputSeconds;
-            inputSecondsTotal += inputSeconds;
-        }
-        double outputSecondsMean = outputSecondsTotal / perIterationElapsed.size();
-        double inputSecondsMean = inputSecondsTotal / perIterationElapsed.size();
+        auto [mockSimulationSeconds, outputSecondsMean, inputSecondsMean, perIterationElapsed] = mockSimulation(args.ITERATIONS, AGENT_COUNT, MESSAGE_COUNT, args.VERBOSITY);
 
-        if (VERBOSE) {
-            printf("mockSimulationSeconds %.6f s\n", mockSimulationSeconds);
-            printf("outputSecondsMean %.6f s\n", outputSecondsMean);
-            printf("inputSecondsMean %.6f s\n", inputSecondsMean);
-            // for (auto [outputSeconds, inputSeconds] : perIterationElapsed) {
-            //     printf("outputSeconds %.6f s\n", outputSeconds);
-            //     printf("inputSeconds %.6f s\n", inputSeconds);
-            // }
+        // If verbose, output post-simulation timing info
+        if (args.VERBOSITY > 0) {
+            fprintf(stdout, "time: mockSimulation   %.6f s\n", mockSimulationSeconds);
+            fprintf(stdout, "time: agentOutputMean  %.6f s\n", outputSecondsMean);
+            fprintf(stdout, "time: agentInputMean   %.6f s\n", inputSecondsMean);
         }
     
         // Build a row of csv data to print later
-        std::vector<std::string> csv_data = {};
-        csv_data.push_back(std::to_string(SEED));
-        csv_data.push_back(std::to_string(REPETITIONS));
-        csv_data.push_back(std::to_string(ITERATIONS));
-        csv_data.push_back(std::to_string(AGENT_COUNT));
-        csv_data.push_back(std::to_string(MESSAGE_COUNT));
-        csv_data.push_back(std::to_string(MESSAGE_FRACTION));
-        csv_data.push_back(std::to_string(CUDART_VERSION/1000) + "." + std::to_string(CUDART_VERSION/10%100));
-        csv_data.push_back(props.name);
-        csv_data.push_back(std::to_string((props.major*10)+props.minor));
-        csv_data.push_back(std::to_string(maxResidentThreads));
-        csv_data.push_back(std::to_string(agentOutputAttribtues.numRegs));
-        csv_data.push_back(std::to_string(agentInputAttributes.numRegs));
-        csv_data.push_back(std::to_string(deviceInitialisationSeconds));
-        csv_data.push_back(std::to_string(repetition));
-        csv_data.push_back(std::to_string(initialiseCuRVESeconds));
-        csv_data.push_back(std::to_string(initialiseDataSeconds));
-        csv_data.push_back(std::to_string(mockSimulationSeconds));
-        csv_data.push_back(std::to_string(outputSecondsMean));
-        csv_data.push_back(std::to_string(inputSecondsMean));
-        std::string csv_row;
-        for (auto item : csv_data) {
-            csv_row += item + ",";
-        }
-        csv_row.pop_back();
-        csv.appendRow(csv_row);
+        std::string csvRow = std::to_string(args.SEED) + "," + 
+            std::to_string(args.REPETITIONS) + "," + 
+            std::to_string(args.ITERATIONS) + "," + 
+            std::to_string(AGENT_COUNT) + "," + 
+            std::to_string(MESSAGE_COUNT) + "," + 
+            std::to_string(args.MESSAGE_FRACTION) + "," + 
+            std::to_string(CUDA_MAJOR) + "." + std::to_string(CUDA_MINOR) + "," + 
+            props.name + "," + 
+            std::to_string((props.major*10)+props.minor) + "," + 
+            std::to_string(maxResidentThreads) + "," + 
+            std::to_string(agentOutputAttribtues.numRegs) + "," + 
+            std::to_string(agentInputAttributes.numRegs) + "," + 
+            std::to_string(deviceInitialisationSeconds) + "," + 
+            std::to_string(repetition) + "," + 
+            std::to_string(initialiseCuRVESeconds) + "," + 
+            std::to_string(initialiseDataSeconds) + "," + 
+            std::to_string(mockSimulationSeconds) + "," + 
+            std::to_string(outputSecondsMean) + "," + 
+            std::to_string(inputSecondsMean);
+        csv.appendRow(csvRow);
     }
 
+    // Write the CSV data out to stdout / disk
     csv.write();
 
     // Reset the device, to ensure profiling output has completed
     gpuErrchk(cudaDeviceReset());
+
+    // Return a successful code
     return EXIT_SUCCESS;
 }
