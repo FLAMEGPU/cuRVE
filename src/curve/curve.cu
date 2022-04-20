@@ -4,15 +4,36 @@
 #include <cassert>
 #include <map>
 #include <memory>
+#include <stdexcept>
 
-#include "flamegpu/runtime/detail/curve/curve.cuh"
+#include "curve/curve.cuh"
+
+// Short term replacment for CUDAErrorChecking.cuh gpuErrcheck
+// #include "flamegpu/gpu/detail/CUDAErrorChecking.cuh"
+
+// @todo curve exception should belong to curve not flamegpu.
 
 
-#include "flamegpu/gpu/detail/CUDAErrorChecking.cuh"
-#include "flamegpu/util/nvtx.h"
+/**
+ * // Short term replacment for CUDAErrorChecking.cuh
+ * Error check function for safe CUDA API calling
+ * Wrap any cuda runtime API calls with this macro to automatically check the returned cudaError_t
+ */
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+/**
+ * Error check function for safe CUDA API calling
+ * @param code CUDA Runtime API return code
+ * @param file File where errorcode was reported (e.g. __FILE__)
+ * @param line Line no where errorcode was reported (e.g. __LINE__)
+ * @throws CUDAError If code != cudaSuccess
+ */
+inline void gpuAssert(cudaError_t code, const char *file, int line) {
+    if (code != cudaSuccess) {
+        // THROW exception::CUDAError("CUDA Error: %s(%d): %s", file, line, cudaGetErrorString(code));
+        fprintf(stderr, "CUDA Error: %s(%d): %s\n", file, line, cudaGetErrorString(code));
+    }
+}
 
-namespace flamegpu {
-namespace detail {
 namespace curve {
 namespace detail {
     /**
@@ -171,7 +192,8 @@ __host__ void Curve::_unregisterVariableByHash(VariableHash variable_hash) {
 
     // error checking
     if (cv == UNKNOWN_VARIABLE) {
-        THROW exception::CurveException("Cannot unregister '%u', hash not found within curve table.", variable_hash);
+        // THROW exception::CurveException("Cannot unregister '%u', hash not found within curve table.", variable_hash);
+        throw std::runtime_error("Cannot unregister '" + std::to_string(variable_hash) + "', hash not found within curve table.");
     }
 
     // clear hash location on host and copy hash to device
@@ -188,7 +210,6 @@ __host__ void Curve::_unregisterVariableByHash(VariableHash variable_hash) {
 }
 __host__ void Curve::updateDevice() {
     auto lock = std::shared_lock<std::shared_timed_mutex>(mutex);
-    NVTX_RANGE("Curve::updateDevice()");
     // Initialise the device (if required)
     assert(deviceInitialised);  // No reason for this to ever fail. Purge calls init device
     // Copy
@@ -211,5 +232,3 @@ Curve& Curve::getInstance() {
 }
 
 }  // namespace curve
-}  // namespace detail
-}  // namespace flamegpu

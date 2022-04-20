@@ -1,5 +1,5 @@
-#ifndef INCLUDE_FLAMEGPU_RUNTIME_DETAIL_CURVE_CURVE_CUH_
-#define INCLUDE_FLAMEGPU_RUNTIME_DETAIL_CURVE_CURVE_CUH_
+#ifndef INCLUDE_CURVE_CURVE_CUH_
+#define INCLUDE_CURVE_CURVE_CUH_
 
 /**
  * @file   curve.cuh
@@ -21,8 +21,6 @@
 #include <shared_mutex>
 #endif
 
-#include "flamegpu/exception/FLAMEGPUDeviceException.cuh"
-
 #ifdef USE_GLM
 #ifdef __CUDACC__
 #ifdef __NVCC_DIAG_PRAGMA_SUPPORT__
@@ -34,8 +32,6 @@
 #include <glm/glm.hpp>
 #endif  // USE_GLM
 
-namespace flamegpu {
-namespace detail {
 namespace curve {
 
 /** @brief    A cuRVE instance.
@@ -624,7 +620,7 @@ class Curve {
     /**
      * Has access to call purge
      */
-    friend class flamegpu::CUDASimulation;
+    // friend class flamegpu::CUDASimulation;
     /**
      * Wipes out host mirrors of device memory
      * Only really to be used after calls to cudaDeviceReset()
@@ -1055,7 +1051,5 @@ __device__ __forceinline__ void Curve::setArrayVariable(const char(&variableName
 }
 
 }  // namespace curve
-}  // namespace detail
-}  // namespace flamegpu
 
-#endif  // INCLUDE_FLAMEGPU_RUNTIME_DETAIL_CURVE_CURVE_CUH_
+#endif  // INCLUDE_CURVE_CURVE_CUH_
