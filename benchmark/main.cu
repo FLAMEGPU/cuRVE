@@ -12,6 +12,8 @@
 #include <tuple>
 #include <vector>
 #include <string>
+#include <map>
+#include <any>
 
 #include "cuda_runtime.h"
 
@@ -376,10 +378,10 @@ int main(int argc, char * argv[]) {
     NVTX_RANGE("main");
 
     // Setup CLI interface
-    CLI::App cli{"cuRVE ABM-like benchmark"};
-
+    // @todo - split this to it's own method, which returns a struct of the populated CLI?
     // @todo - multiple agent count / message counts in a single execution?
-    // @todo - make agent_count cli an optional, if not provided, fill the device?
+    // @todo - YAML configuration file?
+    CLI::App cli{"cuRVE ABM-like benchmark"};
 
     // Variables for cli parsing results to be written into, initalised to their defualt values
     uint32_t device = 0;
@@ -395,7 +397,6 @@ int main(int argc, char * argv[]) {
     // std::string output_filepath = {}; // @todo
     // std::string config_filepath = {}; // @todo
 
-    // @todo - add defaults to help.
     cli.add_flag("-d,--device", device, "select the GPU to use, defaults to 0")->default_val(device);
     cli.add_flag("-s,--seed", seed, "PRNG seed, defaults to 0")->default_val(seed);
     cli.add_flag("-r,--repetitions", repetitions, "The number of repetitions to run")->default_val(repetitions);
@@ -475,7 +476,6 @@ int main(int argc, char * argv[]) {
 
     }
 
-
     // Detect if WDDM is being used, so the most appropraite timer can be used (cudaEvent for linux/tcc, steady clock on windows). Update the anon namespace var.
     deviceUsingWDDM = util::wddm::deviceIsWDDM();
     if (VERBOSE) {
@@ -485,6 +485,11 @@ int main(int argc, char * argv[]) {
             printf("Device is WDDM, using SteadyClockTimer\n");
         }
     }
+
+    // @todo - do this propperly to disk
+    std::string csv_header = "seed,repetitions,iterations,agent_count,message_count,message_fraction,CUDA,GPU,ComputeCapability,maxResidentThreads,agentOutputRegisters,agentInputRegisters,deviceInitialisationSeconds,repetition,initialiseCuRVESeconds,initialiseDataSeconds,mockSimulationSeconds,outputSecondsMean,inputSecondsMean";
+    std::vector<std::string> csv_rows = {};
+
 
     // For up to the right number of repetitions
     for (uint32_t repetition = 0; repetition < REPETITIONS; repetition++) {
@@ -501,7 +506,7 @@ int main(int argc, char * argv[]) {
         }
 
         // Run the mock simulation
-        auto [simulationElapsed, perIterationElapsed] = mockSimulation(ITERATIONS, AGENT_COUNT, MESSAGE_COUNT);
+        auto [mockSimulationSeconds, perIterationElapsed] = mockSimulation(ITERATIONS, AGENT_COUNT, MESSAGE_COUNT);
         // Get the mean per itartion times.
         double outputSecondsTotal = 0.0;
         double inputSecondsTotal = 0.0;
@@ -513,7 +518,7 @@ int main(int argc, char * argv[]) {
         double inputSecondsMean = inputSecondsTotal / perIterationElapsed.size();
 
         if (VERBOSE) {
-            printf("mockSimulation %.6f s\n", simulationElapsed);
+            printf("mockSimulationSeconds %.6f s\n", mockSimulationSeconds);
             printf("outputSecondsMean %.6f s\n", outputSecondsMean);
             printf("inputSecondsMean %.6f s\n", inputSecondsMean);
             // for (auto [outputSeconds, inputSeconds] : perIterationElapsed) {
@@ -521,10 +526,39 @@ int main(int argc, char * argv[]) {
             //     printf("inputSeconds %.6f s\n", inputSeconds);
             // }
         }
-        
-        // Output data
-        printf("@todo - output csv\n");
+    
+        // Build a row of csv data to print later
+        std::vector<std::string> csv_data = {};
+        csv_data.push_back(std::to_string(SEED));
+        csv_data.push_back(std::to_string(REPETITIONS));
+        csv_data.push_back(std::to_string(ITERATIONS));
+        csv_data.push_back(std::to_string(AGENT_COUNT));
+        csv_data.push_back(std::to_string(MESSAGE_COUNT));
+        csv_data.push_back(std::to_string(MESSAGE_FRACTION));
+        csv_data.push_back(std::to_string(CUDART_VERSION/1000) + "." + std::to_string(CUDART_VERSION/10%100));
+        csv_data.push_back(props.name);
+        csv_data.push_back(std::to_string((props.major*10)+props.minor));
+        csv_data.push_back(std::to_string(maxResidentThreads));
+        csv_data.push_back(std::to_string(agentOutputAttribtues.numRegs));
+        csv_data.push_back(std::to_string(agentInputAttributes.numRegs));
+        csv_data.push_back(std::to_string(deviceInitialisationSeconds));
+        csv_data.push_back(std::to_string(repetition));
+        csv_data.push_back(std::to_string(initialiseCuRVESeconds));
+        csv_data.push_back(std::to_string(initialiseDataSeconds));
+        csv_data.push_back(std::to_string(mockSimulationSeconds));
+        csv_data.push_back(std::to_string(outputSecondsMean));
+        csv_data.push_back(std::to_string(inputSecondsMean));
+        std::string csv_row;
+        for (auto item : csv_data) {
+            csv_row += item + ",";
+        }
+        csv_row.pop_back();
+        csv_rows.push_back(csv_row);
+    }
 
+    fprintf(stdout, "%s\n", csv_header.c_str());
+    for (auto row : csv_rows) {
+        fprintf(stdout, "%s\n", row.c_str());
     }
 
     // Reset the device, to ensure profiling output has completed
