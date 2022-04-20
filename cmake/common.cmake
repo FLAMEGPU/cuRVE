@@ -5,7 +5,7 @@ cmake_policy(SET CMP0105 NEW)
 
 # Common rules for other cmake files
 # Don't create installation scripts (and hide CMAKE_INSTALL_PREFIX from cmake-gui)
-set(CMAKE_SKIP_INSTALL_RULES TRUE)
+# set(CMAKE_SKIP_INSTALL_RULES TRUE)
 set(CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}" CACHE INTERNAL "" FORCE)
 # Option to promote com pilation warnings to error, useful for strict CI
 option(WARNINGS_AS_ERRORS "Promote compilation warnings to errors" OFF)

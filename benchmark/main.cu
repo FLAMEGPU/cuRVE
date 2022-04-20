@@ -15,6 +15,9 @@
 
 #include "cuda_runtime.h"
 
+// CLI library
+#include <CLI/CLI.hpp>
+
 // Include the curve header
 #include "curve.h"
 
@@ -372,17 +375,77 @@ void outputCSVRow(FILE * fp) {
 int main(int argc, char * argv[]) {
     NVTX_RANGE("main");
 
-    // @todo - arg parsing from command line / configuraiton file.
-    // @todo - multiple agent count / message counts?
-    const uint32_t REPETITIONS = 3u;
-    // const uint32_t AGENT_COUNT = 2048u;
-    // const uint32_t MESSAGE_COUNT = AGENT_COUNT;
-    const uint64_t SEED = 12u;
-    const uint32_t DEVICE = 0u;
-    const uint32_t ITERATIONS = 8u;
-    const bool APPEND_FLAG = false;
-    const bool VERBOSE = true;
+    // Setup CLI interface
+    CLI::App cli{"cuRVE ABM-like benchmark"};
 
+    // @todo - multiple agent count / message counts in a single execution?
+    // @todo - make agent_count cli an optional, if not provided, fill the device?
+
+    // Variables for cli parsing results to be written into, initalised to their defualt values
+    uint32_t device = 0;
+    uint64_t seed = 12u; 
+    uint32_t repetitions {3u};
+    uint32_t iterations = 8u;
+    uint32_t agent_count = 4096u;
+    float message_fraction = 1.f;
+    bool full_device = false;
+    bool verbose = false;
+    // bool append_output = false; // @todo
+    // bool overwrite_output = false; // @todo
+    // std::string output_filepath = {}; // @todo
+    // std::string config_filepath = {}; // @todo
+
+    // @todo - add defaults to help.
+    cli.add_flag("-d,--device", device, "select the GPU to use, defaults to 0")->default_val(device);
+    cli.add_flag("-s,--seed", seed, "PRNG seed, defaults to 0")->default_val(seed);
+    cli.add_flag("-r,--repetitions", repetitions, "The number of repetitions to run")->default_val(repetitions);
+    cli.add_flag("-i,--iterations", iterations, "number of iterations/steps/ticks per mock simulation")->default_val(iterations);
+
+
+    cli.add_flag("-c,--agent-count", agent_count, "number of agents")->default_val(agent_count);
+    cli.add_flag("--full-device", full_device, "Override the agent count, launching the maximum number of resident threads for the selected GPU");
+    cli.add_flag("--message-fraction", message_fraction, "The number of 'messages' read by each agent")->default_val(message_fraction);
+
+
+    // default_val counts as a value, even when not passed so cannot use group / excludes for these. I'm not loving CLI11.
+    // auto group = cli.add_option_group("subgroup");
+    // group->add_flag("-c,--agent-count", agent_count, "number of agents")->default_val(agent_count);
+    // group->add_flag("--full-device", full_device, "Override the agent count, launching the maximum number of resident threads for the selected GPU");
+    // group->require_option(1); 
+
+
+    cli.add_flag("-v,--verbose", verbose, "Enable verbose output");
+    // cli.add_flag("--append", append, "Append to the output file?");
+    // cli.add_flag("--overwrite", append, "Append to the output file?");
+    // CLI::Option *opt = app.add_option("-f,--file,file", file, "File name");
+
+    // Attempt to parse the CLI, exiting if an exception is thrown by CLI11
+    try {
+        cli.parse(argc, argv);
+    } catch (const CLI::ParseError &e) {
+        return cli.exit(e);
+    }
+
+    // create const'd versions of cli stuff. @todo - do this nicer.
+    const uint32_t DEVICE = device;
+    const uint64_t SEED = seed;
+    const uint32_t REPETITIONS = repetitions;
+    const uint32_t ITERATIONS = iterations;
+    // const uint32_t AGENT_COUNT = agent_count;
+    const float MESSAGE_FRACTION = message_fraction;
+    const bool FULL_DEVICE = full_device;
+    const bool VERBOSE = verbose;
+
+    if (VERBOSE) {
+        printf("cli: DEVICE %u\n", DEVICE);
+        printf("cli: SEED %zu\n", SEED);
+        printf("cli: REPETITIONS %u\n", REPETITIONS);
+        printf("cli: ITERATIONS %u\n", ITERATIONS);
+        printf("cli: agent_count %u\n", agent_count);
+        printf("cli: MESSAGE_FRACTION %.3f\n", MESSAGE_FRACTION);
+        printf("cli: FULL_DEVICE %d\n", FULL_DEVICE);
+        printf("cli: VERBOSE %d\n", VERBOSE);
+    }
 
     // Select the device, and create a context, returning the time.
     double deviceInitialisationSeconds = initialiseGPUContext(DEVICE);
@@ -397,8 +460,13 @@ int main(int argc, char * argv[]) {
         printf("GPU %d: %s, SM_%d%d, CUDA %d.%d, maxResidentThreads %d\n", DEVICE, props.name, props.major, props.minor, CUDART_VERSION/1000, CUDART_VERSION/10%100, maxResidentThreads);
     }
 
-    const uint32_t AGENT_COUNT = maxResidentThreads;
-    const uint32_t MESSAGE_COUNT = AGENT_COUNT;
+    // Can only set the const'd agent count after getting the number of resident threads.
+    const uint32_t AGENT_COUNT = FULL_DEVICE ? maxResidentThreads : agent_count;
+    // For now, always use the full mesage count.
+    const uint32_t MESSAGE_COUNT = std::round(AGENT_COUNT * message_fraction);
+    if (VERBOSE) {
+        printf("AGENT_COUNT %u, MESSAGE_COUNT %u, FULL_DEVICE %d\n", AGENT_COUNT, MESSAGE_COUNT, FULL_DEVICE);
+    }
 
     // Get the register use for each function
     auto [agentOutputAttribtues, agentInputAttributes] = getKernelAttributes();
@@ -434,12 +502,24 @@ int main(int argc, char * argv[]) {
 
         // Run the mock simulation
         auto [simulationElapsed, perIterationElapsed] = mockSimulation(ITERATIONS, AGENT_COUNT, MESSAGE_COUNT);
+        // Get the mean per itartion times.
+        double outputSecondsTotal = 0.0;
+        double inputSecondsTotal = 0.0;
+        for (auto [outputSeconds, inputSeconds] : perIterationElapsed) {
+            outputSecondsTotal += outputSeconds;
+            inputSecondsTotal += inputSeconds;
+        }
+        double outputSecondsMean = outputSecondsTotal / perIterationElapsed.size();
+        double inputSecondsMean = inputSecondsTotal / perIterationElapsed.size();
+
         if (VERBOSE) {
             printf("mockSimulation %.6f s\n", simulationElapsed);
-            for (auto [outputSeconds, intputSeconds] : perIterationElapsed) {
-                printf("outputSeconds %.6f s\n", outputSeconds);
-                printf("intputSeconds %.6f s\n", intputSeconds);
-            }
+            printf("outputSecondsMean %.6f s\n", outputSecondsMean);
+            printf("inputSecondsMean %.6f s\n", inputSecondsMean);
+            // for (auto [outputSeconds, inputSeconds] : perIterationElapsed) {
+            //     printf("outputSeconds %.6f s\n", outputSeconds);
+            //     printf("inputSeconds %.6f s\n", inputSeconds);
+            // }
         }
         
         // Output data

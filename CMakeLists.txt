@@ -17,7 +17,7 @@ if(NOT CheckCompilerFunctionality_RESULT)
 endif()
 
 # Don't create installation scripts (and hide CMAKE_INSTALL_PREFIX from cmake-gui)
-set(CMAKE_SKIP_INSTALL_RULES TRUE)
+# set(CMAKE_SKIP_INSTALL_RULES TRUE)
 set(CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}" CACHE INTERNAL ""  FORCE)
 
 # Supports CUDA 11.0 and newer for C++17?

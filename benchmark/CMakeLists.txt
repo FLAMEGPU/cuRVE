@@ -57,6 +57,9 @@ include(${CMAKE_CURRENT_LIST_DIR}/../cmake/cxxstd.cmake)
 # Include the common rules
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/common.cmake)
 
+# Fetch 3rd party dependencies and make them available
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/dependencies/CLI11.cmake)
+
 # Control how we link against the cuda runtime library (CMake >= 3.17)
 # We may wish to use static or none instead, subject to python library handling.
 set(CMAKE_CUDA_RUNTIME_LIBRARY shared)
@@ -89,6 +92,10 @@ SetCUDAGencodes(TARGET "${PROJECT_NAME}")
 
 # Enable RDC for the target
 set_property(TARGET ${PROJECT_NAME} PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+
+# Link against the cxxopts cli library
+# @todo - this is not an imported target, so the implicit include directory is not treated as SYSTEM. Can either modify the target, or potentially trigger an install to generate the config then find package instead? 
+target_link_libraries(${PROJECT_NAME} PRIVATE CLI11::CLI11)
 
 # Link against the flamegpu static library target.
 target_link_libraries(${PROJECT_NAME} PRIVATE cuRVE)
