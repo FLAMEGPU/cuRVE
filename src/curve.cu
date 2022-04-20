@@ -1,6 +1,6 @@
 
 #include <stdio.h>
-#include "curve.h"
+#include "curve.cuh"
 #include "assert.h"
 
 #define CURVE_MAX_VARIABLES 			32 							//!< Default maximum number of cuRVE variables (must be a power of 2)

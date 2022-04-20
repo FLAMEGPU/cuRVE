@@ -29,7 +29,7 @@
 #include "util/OutputCSV.hpp"
 
 // Include the curve header
-#include "curve.h"
+#include "curve.cuh"
 
 // Anonymous namespace for locally scoped global state
 namespace {

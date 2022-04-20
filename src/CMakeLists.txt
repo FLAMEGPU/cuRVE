@@ -8,7 +8,7 @@ get_filename_component(CURVE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../include 
 get_filename_component(CURVE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR} REALPATH)
 
 SET(SRC_INCLUDE
-    ${CURVE_INCLUDE_DIR}/curve.h
+    ${CURVE_INCLUDE_DIR}/curve.cuh
 )
 SET(SRC_CURVE
     ${CURVE_SRC_DIR}/curve.cu
