@@ -2,6 +2,7 @@
 #define INCLUDE_UTIL_NVTX_H_
 
 #include <cstdint>
+#include <string>
 
 /**
  * Utility namespace for handling of NVTX profiling markers/ranges, wrapped in macros to avoid performance impact if not enabled.
@@ -72,6 +73,15 @@ inline void push(const char * label) {
     // Increment the counter tracking the next colour to use.
     nextColourIdx = colourIdx + 1;
 }
+/**
+ * Method to push an NVTX marker for improved profiling, if NVTX is defined
+ * @param label label for the NVTX marker
+ * @note The number of pushes must match the number of pops.
+ * @see NVTX_PUSH to use with minimal performance impact
+ */
+inline void push(std::string label) {
+    push(label.c_str());
+}
 #else
 inline void push(const char *) {
 }
@@ -101,6 +111,14 @@ class NVTXRange {
     */
     explicit NVTXRange(const char *label) {
         util::nvtx::push(label);
+    }
+    /**
+    * Constructor which pushes an NVTX marker onto the stack with the specified label
+    * @param label the label for the nvtx range.
+    * @see NVTX_RANGE to use with minimal performance impact
+    */
+    explicit NVTXRange(std::string label) {
+        util::nvtx::push(label.c_str());
     }
     /**
      *  Destructor which pops a marker off the nvtx stack.
