@@ -6,7 +6,7 @@ project(example LANGUAGES CXX CUDA)
 # Define the list of sources 
 # Define include and source files/dirs
 get_filename_component(EXAMPLE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR} REALPATH)
-get_filename_component(EXAMPLE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR} REALPATH)
+get_filename_component(EXAMPLE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/ REALPATH)
 
 SET(SRC_INCLUDE
 )

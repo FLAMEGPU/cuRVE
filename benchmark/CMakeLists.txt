@@ -6,17 +6,17 @@ project(benchmark LANGUAGES CXX CUDA)
 # Define the list of sources 
 # Define include and source files/dirs
 get_filename_component(BENCHMARK_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR} REALPATH)
-get_filename_component(BENCHMARK_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR} REALPATH)
+get_filename_component(BENCHMARK_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src REALPATH)
 
 SET(SRC_INCLUDE
-    ${BENCHMARK_INCLUDE_DIR}/util/nvtx.h
-    ${BENCHMARK_INCLUDE_DIR}/util/CUDAErrorChecking.cuh
-    ${BENCHMARK_INCLUDE_DIR}/util/Timer.h
-    ${BENCHMARK_INCLUDE_DIR}/util/SteadyClockTimer.h
-    ${BENCHMARK_INCLUDE_DIR}/util/CUDAEventTimer.cuh
-    ${BENCHMARK_INCLUDE_DIR}/util/wddm.cuh
 )
 SET(SRC_BENCHMARK
+    ${BENCHMARK_SRC_DIR}/util/CUDAErrorChecking.cuh
+    ${BENCHMARK_SRC_DIR}/util/CUDAEventTimer.cuh
+    ${BENCHMARK_SRC_DIR}/util/nvtx.h
+    ${BENCHMARK_SRC_DIR}/util/SteadyClockTimer.h
+    ${BENCHMARK_SRC_DIR}/util/Timer.h
+    ${BENCHMARK_SRC_DIR}/util/wddm.cuh
     ${BENCHMARK_SRC_DIR}/util/wddm.cu
     ${BENCHMARK_SRC_DIR}/main.cu
 )
