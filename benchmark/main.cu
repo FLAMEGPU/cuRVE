@@ -45,6 +45,52 @@ namespace {
     }
 }  // anonymous namespace
 
+namespace util {
+class OutputCSV { 
+ public:
+    OutputCSV(FILE * fp) : 
+        header({}),
+        rows({}),
+        fp(fp)
+        {
+    };
+    ~OutputCSV() { };
+
+    void setHeader(std::string header) {
+        this->header = header;
+    };
+    void appendRow(std::string row) {
+        this->rows.push_back(row);
+    };
+    void writeHeader() {
+        if (this->header.size()) {
+            FILE * fp = this->fp != nullptr ? this->fp : stdout;
+            fprintf(fp, "%s\n", this->header.c_str());
+            fflush(fp);
+        }
+    };
+    void writeRows() {
+        FILE * fp = this->fp != nullptr ? this->fp : stdout;
+        for (const auto & row : this->rows) {
+            fprintf(fp, "%s\n", row.c_str());
+        }
+        fflush(fp);
+    };
+    void write() {
+        this->writeHeader();
+        this->writeRows();
+    };
+    void clear() {
+        this->rows.clear(); 
+    };
+ private:
+    std::string header;
+    std::vector<std::string> rows;
+    FILE * fp;
+};
+}  // namespace util
+
+
 // Define constant expression string literals for commonly used variables to pass around.
 // I would much rather these be constexpr strings, but the relaxed constexpr flag wasn't cooperating
 #define AGENT_A "a"
@@ -348,27 +394,6 @@ std::tuple<double, std::vector<std::tuple<double, double>>> mockSimulation(const
 }
 
 /**
- * Output the header row of a csv file containing the 
- * @param fp the filepointer to the file to write to.
- */
-void outputCSVHeader(FILE * fp) {
-    if (fp != nullptr) {
-        fprintf(fp, "@todo\n");
-    }
-}
-
-/**
- * Output the body row of a csv file, containing data about a specific mock simulation
- * @param fp the filepointer to the file to write to.
- */
-void outputCSVRow(FILE * fp) {
-    if (fp != nullptr) {
-        fprintf(fp, "@todo\n");
-    }
-}
-
-
-/**
  * Host main routine, process CLI and launches the appropriate benchmarks.
  * @param argc the number of arguments
  * @param argv the main method argument values
@@ -486,9 +511,11 @@ int main(int argc, char * argv[]) {
         }
     }
 
-    // @todo - do this propperly to disk
-    std::string csv_header = "seed,repetitions,iterations,agent_count,message_count,message_fraction,CUDA,GPU,ComputeCapability,maxResidentThreads,agentOutputRegisters,agentInputRegisters,deviceInitialisationSeconds,repetition,initialiseCuRVESeconds,initialiseDataSeconds,mockSimulationSeconds,outputSecondsMean,inputSecondsMean";
-    std::vector<std::string> csv_rows = {};
+
+    // Prep an object for handling the CSV output, so to de-noise the miniapp
+    // @todo not stdout
+    util::OutputCSV csv = {stdout};
+    csv.setHeader("seed,repetitions,iterations,agent_count,message_count,message_fraction,CUDA,GPU,ComputeCapability,maxResidentThreads,agentOutputRegisters,agentInputRegisters,deviceInitialisationSeconds,repetition,initialiseCuRVESeconds,initialiseDataSeconds,mockSimulationSeconds,outputSecondsMean,inputSecondsMean");
 
 
     // For up to the right number of repetitions
@@ -553,13 +580,10 @@ int main(int argc, char * argv[]) {
             csv_row += item + ",";
         }
         csv_row.pop_back();
-        csv_rows.push_back(csv_row);
+        csv.appendRow(csv_row);
     }
 
-    fprintf(stdout, "%s\n", csv_header.c_str());
-    for (auto row : csv_rows) {
-        fprintf(stdout, "%s\n", row.c_str());
-    }
+    csv.write();
 
     // Reset the device, to ensure profiling output has completed
     gpuErrchk(cudaDeviceReset());
