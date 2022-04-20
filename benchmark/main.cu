@@ -103,7 +103,7 @@ __global__ void agentInput(const uint32_t AGENT_COUNT, const uint32_t MESSAGE_CO
  * @return elapsed time in seconds (via a steady clock timer)
  */
 double initialiseGPUContext(int deviceIdx) {
-    NVTX_RANGE("initialiseGPUContext");
+    NVTX_RANGE(__func__);
     // Initialise a cuda context to avoid this being included in the timing.
     util::SteadyClockTimer timer = util::SteadyClockTimer();
     timer.start();
@@ -153,6 +153,7 @@ double initialiseGPUContext(int deviceIdx) {
  * @return cudaDevicePropertiers struct for the device
  */
 cudaDeviceProp getGPUProperties(const int deviceIdx) {
+    NVTX_RANGE(__func__);
     cudaDeviceProp props = {};
     gpuErrchk(cudaGetDeviceProperties(&props, deviceIdx));
     return props;
@@ -179,7 +180,7 @@ std::tuple<cudaFuncAttributes, cudaFuncAttributes> getKernelAttributes() {
  * @return elapsed time in seconds
  */
 double initialiseCuRVE(const uint32_t AGENT_COUNT) {
-    NVTX_RANGE("initialiseCuRVE");
+    NVTX_RANGE(__func__);
     // Get a timer
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
     // Start recording the time
@@ -211,7 +212,7 @@ double initialiseCuRVE(const uint32_t AGENT_COUNT) {
  * @return elapsed time in seconds
  */ 
 double initialiseData(const uint64_t SEED, const uint32_t AGENT_COUNT) {
-    NVTX_RANGE("initialiseData");
+    NVTX_RANGE(__func__);
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
     // Start recording the time
     timer->start();
@@ -244,7 +245,7 @@ double initialiseData(const uint64_t SEED, const uint32_t AGENT_COUNT) {
  * @return the elapsed time in seconds
  */
 double launchAgentOutput(const uint32_t AGENT_COUNT) {
-    NVTX_RANGE("launchAgentOutput");
+    NVTX_RANGE(__func__);
     // Get a timer
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
     // Start recording the time
@@ -280,7 +281,7 @@ double launchAgentOutput(const uint32_t AGENT_COUNT) {
  * @return the elapsed time in seconds
  */
 double launchAgentInput(const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT) {
-    NVTX_RANGE("launchAgentInput");
+    NVTX_RANGE(__func__);
     // Get a timer
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
     // Start recording the time
@@ -317,7 +318,7 @@ double launchAgentInput(const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT
  * @return A tuple containing the simulation elapsed time in seconds, and a vector of tuples, containing the per-iteration time and the per mock agent function per iteration.
  */ 
 std::tuple<double, std::vector<std::tuple<double, double>>> mockSimulation(const uint32_t ITERATIONS, const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT) {
-    NVTX_RANGE("mockSimulation");
+    NVTX_RANGE("__func__");
     // Get a timer
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
     // Start recording the time
@@ -327,8 +328,7 @@ std::tuple<double, std::vector<std::tuple<double, double>>> mockSimulation(const
     perIterationElapsed.reserve(ITERATIONS);
      
     for (uint32_t iteration = 0; iteration < ITERATIONS; iteration++) {
-        NVTX_RANGE("iteration");  // @todo - add the iteration number to the range name?
-
+        NVTX_RANGE("iteration " + std::to_string(iteration));
         // Run the mock message output function
         double outputSeconds = launchAgentOutput(AGENT_COUNT);
 
@@ -353,7 +353,7 @@ std::tuple<double, std::vector<std::tuple<double, double>>> mockSimulation(const
  * @return status code, non zero values imply an error occured
  */
 int main(int argc, char * argv[]) {
-    NVTX_RANGE("main");
+    NVTX_RANGE(__func__);
 
     // Setup CLI interface
     // @todo - split this to it's own method, which returns a struct of the populated CLI?
