@@ -290,7 +290,7 @@ double launchAgentInput(const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT
     gridSize = (AGENT_COUNT + blockSize - 1) / blockSize;
 
     // Launch the kernel
-    agentOutput<<<gridSize, blockSize>>>(AGENT_COUNT);
+    agentInput<<<gridSize, blockSize>>>(AGENT_COUNT, MESSAGE_COUNT);
     gpuErrchkLaunch();
 
     // Synchronize the device 
