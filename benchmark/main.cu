@@ -12,8 +12,6 @@
 #include <tuple>
 #include <vector>
 #include <string>
-#include <map>
-#include <any>
 
 #include "cuda_runtime.h"
 
@@ -30,6 +28,7 @@
 #include "util/CUDAEventTimer.cuh"
 #include "util/wddm.cuh"
 #include "util/nvtx.h"
+#include "util/OutputCSV.hpp"
 
 // Anonymous namespace for locally scoped global state
 namespace {
@@ -44,52 +43,6 @@ namespace {
         }
     }
 }  // anonymous namespace
-
-namespace util {
-class OutputCSV { 
- public:
-    OutputCSV(FILE * fp) : 
-        header({}),
-        rows({}),
-        fp(fp)
-        {
-    };
-    ~OutputCSV() { };
-
-    void setHeader(std::string header) {
-        this->header = header;
-    };
-    void appendRow(std::string row) {
-        this->rows.push_back(row);
-    };
-    void writeHeader() {
-        if (this->header.size()) {
-            FILE * fp = this->fp != nullptr ? this->fp : stdout;
-            fprintf(fp, "%s\n", this->header.c_str());
-            fflush(fp);
-        }
-    };
-    void writeRows() {
-        FILE * fp = this->fp != nullptr ? this->fp : stdout;
-        for (const auto & row : this->rows) {
-            fprintf(fp, "%s\n", row.c_str());
-        }
-        fflush(fp);
-    };
-    void write() {
-        this->writeHeader();
-        this->writeRows();
-    };
-    void clear() {
-        this->rows.clear(); 
-    };
- private:
-    std::string header;
-    std::vector<std::string> rows;
-    FILE * fp;
-};
-}  // namespace util
-
 
 // Define constant expression string literals for commonly used variables to pass around.
 // I would much rather these be constexpr strings, but the relaxed constexpr flag wasn't cooperating
