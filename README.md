@@ -9,7 +9,7 @@
 The CUDA Runtime Variable Environment (curRVE) is a library which provides key-value memory management and access for CUDA global device memory.
 
 GPU device memory can be registered and values set in host code using a constant string expression key via the the cuRVE API. For example the following initialises and sets the value of three cuRVE variables.
-
+<!-- 
 ```cuda
 curveInit(VECTOR_ELEMENTS);
 curveRegisterVariable("a");
@@ -70,7 +70,7 @@ Formatted errors can be output using the following API calls which will use the 
 curveReportErrors();      //Host API function outputs any host or device errors to std:out
 curveReportHostError();   //Host API function outputs the last host API error
 curveReportDeviceError(); //Device API function outputs the last device API error
-```
+``` -->
 
 ## Documentation
 

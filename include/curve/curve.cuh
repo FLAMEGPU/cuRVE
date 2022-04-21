@@ -621,11 +621,7 @@ class Curve {
      * Has access to call purge
      */
     // friend class flamegpu::CUDASimulation;
-    /**
-     * Wipes out host mirrors of device memory
-     * Only really to be used after calls to cudaDeviceReset()
-     */
-    __host__ void purge();
+
 
  protected:
     /**
@@ -638,6 +634,14 @@ class Curve {
     Curve();
 
  public:
+
+    // @standalone - this is now public.
+    /**
+     * Wipes out host mirrors of device memory
+     * Only really to be used after calls to cudaDeviceReset()
+     */
+    __host__ void purge();
+
 #ifndef __CUDACC_RTC__
     /**
      * @brief    Gets the instance.

@@ -18,6 +18,7 @@
  */
 
 #include <stdio.h>
+#include <random>
 
 // For the CUDA runtime routines (prefixed with "cuda_")
 #include "cuda_runtime.h"
@@ -26,22 +27,24 @@
 
 
 
-__global__ void vectorAdd(int numElements)
+__global__ void vectorAdd(int NUM_ELEMENTS, curve::Curve::VariableHash namespace_hash)
 {
-    unsigned int idx;
-	float a, b, c;
+    unsigned int idx = (blockDim.x * blockIdx.x) + threadIdx.x;
+    if(idx < NUM_ELEMENTS){
+        // @todo - getAgnet / getMessage isnt' required outside of flamegpu's curve
+        float a = curve::Curve::getAgentVariable<float>("a", namespace_hash, idx);
+        float b = curve::Curve::getAgentVariable<float>("b", namespace_hash, idx);
+        float c = a + b;
 
-    idx = (blockDim.x * blockIdx.x) + threadIdx.x;
+        // if (idx < 32) {
+        //     printf("%d: %f %f %f\n", idx, a, b, c);
+        // }
 
-    a = getFloatVariable("a", idx);
-    b = getFloatVariable("b", idx);
-    //printf("B is %f \n", b);
+        // curve::Curve::setAgentVariable<float>("c", namespace_hash, c, idx);
 
-    c = a + b;
-
-    setFloatVariable("c", c, idx);
-
-    curveReportLastDeviceError();
+        // @todo - no seatbelts / device errors setup yet.
+        // curveReportLastDeviceError();
+    }
 }
 
 /**
@@ -51,26 +54,65 @@ int main(void)
 {
     // Error code to check return values for CUDA calls
     cudaError_t err = cudaSuccess;
-    int numElements = 256;
+    const int NUM_ELEMENTS = 1024;
+    const unsigned int SEED = 12;
 
-    curveInit(numElements);
-    curveSetNamespace("name1");
-    curveRegisterVariable("a");
-    curveRegisterVariable("b");
-    curveRegisterVariable("c");
-    curveReportErrors();
+    // Summon curve singleton.
+    auto &curve = curve::Curve::getInstance(); 
 
-    printf("[Vector addition of %d elements]\n", numElements);
+    // Initialise curve via purging.
+    curve.purge();
+
+    // Allocate hsot memory for insiitalstion
+    float * h_a = static_cast<float*>(malloc(NUM_ELEMENTS * sizeof(float)));
+    float * h_b = static_cast<float*>(malloc(NUM_ELEMENTS * sizeof(float)));
+    float * h_c = static_cast<float*>(malloc(NUM_ELEMENTS * sizeof(float)));
+
+    // Allocate device memory for data to be stored in.
+    float * d_a = nullptr;
+    float * d_b = nullptr;
+    float * d_c = nullptr;
+    cudaMalloc(&d_a, NUM_ELEMENTS * sizeof(float));
+    cudaMalloc(&d_b, NUM_ELEMENTS * sizeof(float));
+    cudaMalloc(&d_c, NUM_ELEMENTS * sizeof(float));
 
 
-    for (int i = 0; i < numElements; ++i)
-	{
-    	float a = rand()/(float)RAND_MAX;
-		float b = (float) i;
-    	curveSetFloat("a", a, i);
-		curveSetFloat("b", b, i);
-		curveReportErrors();
+
+    // Populate host data
+    std::mt19937_64 prng(SEED);
+    std::uniform_real_distribution<float> a_dist(0.f, 1.f);
+    for (int i = 0; i < NUM_ELEMENTS; ++i) {
+    	h_a[i] = a_dist(prng);
+		h_b[i] = (float) i;
+        h_c[i] = 0;
 	}
+    // Copy to the device
+    cudaMemcpy(d_a, h_a, NUM_ELEMENTS * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b, h_b, NUM_ELEMENTS * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_c, h_c, NUM_ELEMENTS * sizeof(float), cudaMemcpyHostToDevice);
+
+
+    printf("[Vector addition of %d elements]\n", NUM_ELEMENTS);
+
+
+    // Register variables with curve in an appropraite namesapce, in real world use this needs doing any time that the device pointer may have changed.
+    // This is analgous to flamegpu::CUDAAgent::mapRuntimeVariables
+    // @todo - not all of these are required in this example.
+    const unsigned int instance_id = 0; 
+    const curve::Curve::VariableHash agent_hash = curve::Curve::variableRuntimeHash("agent");
+    const curve::Curve::VariableHash func_hash = curve::Curve::variableRuntimeHash("func");
+    const curve::Curve::VariableHash agent_function_hash = agent_hash + func_hash + instance_id;
+
+
+    curve.registerVariableByHash(curve::Curve::variableRuntimeHash("a") + agent_function_hash, d_a, sizeof(float), NUM_ELEMENTS);
+    curve.registerVariableByHash(curve::Curve::variableRuntimeHash("b") + agent_function_hash, d_b, sizeof(float), NUM_ELEMENTS);
+    curve.registerVariableByHash(curve::Curve::variableRuntimeHash("c") + agent_function_hash, d_c, sizeof(float), NUM_ELEMENTS);
+    // update the device copy of curve.
+    curve.updateDevice();
+    // Sync prior to kernel launch if streams are used. If multithreaded single cotnext rdc, const cache curve symbols must be protected while kernels are in flight.
+    cudaDeviceSynchronize();
+    // curveReportErrors(); // @todo - update?
+
 
     //timing start
     cudaEvent_t start,stop;
@@ -82,10 +124,12 @@ int main(void)
 
     // Launch the Vector Add CUDA Kernel
     int threadsPerBlock = 256;
-    int blocksPerGrid =(numElements + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGrid =(NUM_ELEMENTS + threadsPerBlock - 1) / threadsPerBlock;
     printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
-    vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(numElements);
+    vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(NUM_ELEMENTS, agent_function_hash);
     err = cudaGetLastError();
+    // Sync the device
+    cudaDeviceSynchronize();
 
     //timing end
     cudaEventRecord(stop,0);
@@ -94,7 +138,9 @@ int main(void)
 
     printf("Kernel Time was %f ms\n", elapsedTime);
 
-    curveReportErrors();
+    // curveReportErrors();
+
+    // Unregister curve use, analagous to flamegpu::   CUDAAgent::unmapRuntimeVariables
 
     if (err != cudaSuccess)
     {
@@ -102,6 +148,31 @@ int main(void)
         exit(EXIT_FAILURE);
     }
 
+    // Free memory
+    if (h_a != nullptr) {
+        std::free(h_a);
+        h_a = nullptr;
+    }
+    if (h_b != nullptr) {
+        std::free(h_b);
+        h_b = nullptr;
+    }
+    if (h_c != nullptr) {
+        std::free(h_c);
+        h_c = nullptr;
+    }
+    if (d_a != nullptr) {
+        cudaFree(d_a);
+        d_a = nullptr;
+    }
+    if (d_b != nullptr) {
+        cudaFree(d_b);
+        d_b = nullptr;
+    }
+    if (d_c != nullptr) {
+        cudaFree(d_c);
+        d_c = nullptr;
+    }
     // Reset the device and exit
     err = cudaDeviceReset();
 
@@ -110,6 +181,7 @@ int main(void)
         fprintf(stderr, "Failed to deinitialize the device! error=%s\n", cudaGetErrorString(err));
         exit(EXIT_FAILURE);
     }
+    
 
     printf("Done\n");
     return 0;
