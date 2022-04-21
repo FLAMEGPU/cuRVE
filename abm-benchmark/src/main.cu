@@ -533,7 +533,7 @@ double launchAgentInput(const uint32_t MESSAGE_COUNT, MockPopulation &population
  * @return A tuple containing the simulation elapsed time in seconds, mean time per mock agent function and a vector of tuples, containing the per-iteration time and the per mock agent function per iteration.
  */ 
 std::tuple<double, double, double, std::vector<std::tuple<double, double>>> mockSimulation(const uint32_t ITERATIONS, const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT, const uint32_t VERBOSITY, MockPopulation &population, MockMessageList &messageList) {
-    NVTX_RANGE("__func__");
+    NVTX_RANGE(__func__);
     // Get a timer
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
     // Start recording the time
