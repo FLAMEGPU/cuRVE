@@ -583,7 +583,7 @@ std::tuple<double, double, double, std::vector<std::tuple<double, double>>> mock
 struct CLIArgs {
     uint32_t DEVICE = 0u;
     uint64_t SEED = 0u; 
-    uint32_t REPETITIONS = 3u;
+    uint32_t REPETITIONS = 1u;
     uint32_t ITERATIONS = 8u;
     uint32_t AGENT_COUNT = 2u << 13;
     float MESSAGE_FRACTION = 1.f;
