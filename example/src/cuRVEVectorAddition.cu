@@ -76,8 +76,6 @@ int main(void)
     cudaMalloc(&d_b, NUM_ELEMENTS * sizeof(float));
     cudaMalloc(&d_c, NUM_ELEMENTS * sizeof(float));
 
-
-
     // Populate host data
     std::mt19937_64 prng(SEED);
     std::uniform_real_distribution<float> a_dist(0.f, 1.f);
@@ -141,6 +139,9 @@ int main(void)
     // curveReportErrors();
 
     // Unregister curve use, analagous to flamegpu::   CUDAAgent::unmapRuntimeVariables
+    curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("a") + agent_function_hash);
+    curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("b") + agent_function_hash);
+    curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("c") + agent_function_hash);
 
     if (err != cudaSuccess)
     {
