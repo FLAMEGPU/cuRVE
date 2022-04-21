@@ -56,11 +56,12 @@ namespace {
     }
 }  // anonymous namespace
 
-// Define constant expression string literals for commonly used variables to pass around.
-// I would much rather these be constexpr strings, but the relaxed constexpr flag wasn't cooperating
-#define A "a"
-#define B "b"
-#define C "c"
+// Env variables as defines for now, for a closer match these would be pulled through curve in their own namespace.
+#define G_REPULSE_FACTOR 0.05f
+#define G_RADIUS 2.0f
+#define AGENT_NAME "circle"
+#define MESSAGE_LIST_NAME "message"
+
 
 /**
  * Class to mock a population of agents, storing agent data SoA-like. This is only used on the host
@@ -68,21 +69,27 @@ namespace {
 class MockPopulation {
  public:
     uint32_t length = 0;
-    float * h_a = nullptr;
-    float * h_b = nullptr;
-    float * h_c = nullptr;
-    float * d_a = nullptr;
-    float * d_b = nullptr;
-    float * d_c = nullptr;
+
+    uint32_t * h_id = nullptr;
+    float * h_x = nullptr;
+    float * h_y = nullptr;
+    float * h_z = nullptr;
+
+    float * d_id = nullptr;
+    float * d_x = nullptr;
+    float * d_y = nullptr;
+    float * d_z = nullptr;
 
     MockPopulation(const uint32_t length) :
         length(0),
-        h_a(nullptr),
-        h_b(nullptr),
-        h_c(nullptr),
-        d_a(nullptr),
-        d_b(nullptr),
-        d_c(nullptr) {
+        h_id(nullptr),
+        h_x(nullptr),
+        h_y(nullptr),
+        h_z(nullptr),
+        d_id(nullptr),
+        d_x(nullptr),
+        d_y(nullptr),
+        d_z(nullptr) {
         this->allocate(length);
     }
 
@@ -96,65 +103,75 @@ class MockPopulation {
             this->deallocate();
         }
         this->length = length;
-        this->h_a = static_cast<float*>(std::malloc(length * sizeof(float)));
-        this->h_b = static_cast<float*>(std::malloc(length * sizeof(float)));
-        this->h_c = static_cast<float*>(std::malloc(length * sizeof(float)));
-        memset(this->h_a, 0, length * sizeof(float));
-        memset(this->h_b, 0, length * sizeof(float));
-        memset(this->h_c, 0, length * sizeof(float));
+        this->h_id = static_cast<uint32_t*>(std::malloc(length * sizeof(uint32_t)));
+        this->h_x = static_cast<float*>(std::malloc(length * sizeof(float)));
+        this->h_y = static_cast<float*>(std::malloc(length * sizeof(float)));
+        this->h_z = static_cast<float*>(std::malloc(length * sizeof(float)));
+        memset(this->h_id, 0, length * sizeof(uint32_t));
+        memset(this->h_x, 0, length * sizeof(float));
+        memset(this->h_y, 0, length * sizeof(float));
+        memset(this->h_z, 0, length * sizeof(float));
 
-        gpuErrchk(cudaMalloc(&this->d_a, length * sizeof(float)));
-        gpuErrchk(cudaMalloc(&this->d_b, length * sizeof(float)));
-        gpuErrchk(cudaMalloc(&this->d_c, length * sizeof(float)));
+        gpuErrchk(cudaMalloc(&this->d_id, length * sizeof(uint32_t)));
+        gpuErrchk(cudaMalloc(&this->d_x, length * sizeof(float)));
+        gpuErrchk(cudaMalloc(&this->d_y, length * sizeof(float)));
+        gpuErrchk(cudaMalloc(&this->d_z, length * sizeof(float)));
 
-        gpuErrchk(cudaMemset(this->d_a, 0, length * sizeof(float)));
-        gpuErrchk(cudaMemset(this->d_b, 0, length * sizeof(float)));
-        gpuErrchk(cudaMemset(this->d_c, 0, length * sizeof(float)));
+        gpuErrchk(cudaMemset(this->d_id, 0, length * sizeof(uint32_t)));
+        gpuErrchk(cudaMemset(this->d_x, 0, length * sizeof(float)));
+        gpuErrchk(cudaMemset(this->d_y, 0, length * sizeof(float)));
+        gpuErrchk(cudaMemset(this->d_z, 0, length * sizeof(float)));
     };
 
     void deallocate() {
         NVTX_RANGE(__func__);
         this->length = 0;
-        if(this->h_a != nullptr) {
-            std::free(this->h_a);
-            this->h_a = nullptr;
+        if(this->h_id != nullptr) {
+            std::free(this->h_id);
+            this->h_id = nullptr;
         }
-        if(this->h_b != nullptr) {
-            std::free(this->h_b);
-            this->h_b = nullptr;
+        if(this->h_x != nullptr) {
+            std::free(this->h_x);
+            this->h_x = nullptr;
         }
-        if(this->h_c != nullptr) {
-            std::free(this->h_c);
-            this->h_c = nullptr;
+        if(this->h_y != nullptr) {
+            std::free(this->h_y);
+            this->h_y = nullptr;
         }
-        if(this->d_a != nullptr) {
-            gpuErrchk(cudaFree(this->d_a));
-            this->d_a = nullptr;
+        if(this->h_z != nullptr) {
+            std::free(this->h_z);
+            this->h_z = nullptr;
         }
-        if(this->d_b != nullptr) {
-            gpuErrchk(cudaFree(this->d_b));
-            this->d_b = nullptr;
+        if(this->d_x != nullptr) {
+            gpuErrchk(cudaFree(this->d_x));
+            this->d_x = nullptr;
         }
-        if(this->d_c != nullptr) {
-            gpuErrchk(cudaFree(this->d_c));
-            this->d_c = nullptr;
+        if(this->d_y != nullptr) {
+            gpuErrchk(cudaFree(this->d_y));
+            this->d_y = nullptr;
+        }
+        if(this->d_z != nullptr) {
+            gpuErrchk(cudaFree(this->d_z));
+            this->d_z = nullptr;
         }
     };
 
     void copyh2d() {
         NVTX_RANGE(__func__);
         if(length > 0) {
-            gpuErrchk(cudaMemcpy(d_a, h_a, length * sizeof(float), cudaMemcpyHostToDevice));
-            gpuErrchk(cudaMemcpy(d_b, h_b, length * sizeof(float), cudaMemcpyHostToDevice));
-            gpuErrchk(cudaMemcpy(d_c, h_c, length * sizeof(float), cudaMemcpyHostToDevice));
+            gpuErrchk(cudaMemcpy(d_id, h_id, length * sizeof(uint32_t), cudaMemcpyHostToDevice));
+            gpuErrchk(cudaMemcpy(d_x, h_x, length * sizeof(float), cudaMemcpyHostToDevice));
+            gpuErrchk(cudaMemcpy(d_y, h_y, length * sizeof(float), cudaMemcpyHostToDevice));
+            gpuErrchk(cudaMemcpy(d_z, h_z, length * sizeof(float), cudaMemcpyHostToDevice));
         }
     }
     void copyd2h() {
         NVTX_RANGE(__func__);
         if(length > 0) {
-            gpuErrchk(cudaMemcpy(h_a, d_a, length * sizeof(float), cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(h_b, d_b, length * sizeof(float), cudaMemcpyDeviceToHost));
-            gpuErrchk(cudaMemcpy(h_c, d_c, length * sizeof(float), cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(h_id, d_id, length * sizeof(uint32_t), cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(h_x, d_x, length * sizeof(float), cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(h_y, d_y, length * sizeof(float), cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(h_z, d_z, length * sizeof(float), cudaMemcpyDeviceToHost));
         }
     }
 };
@@ -165,13 +182,17 @@ class MockPopulation {
 class MockMessageList {
  public:
     uint32_t length = 0;
-    float * d_a = nullptr;
-    float * d_b = nullptr;
+    uint32_t * d_id = nullptr;
+    float * d_x = nullptr;
+    float * d_y = nullptr;
+    float * d_z = nullptr;
 
     MockMessageList(const uint32_t length) :
         length(0),
-        d_a(nullptr),
-        d_b(nullptr) {
+        d_id(nullptr),
+        d_x(nullptr),
+        d_y(nullptr),
+        d_z(nullptr) {
         this->allocate(length);
     }
 
@@ -185,22 +206,34 @@ class MockMessageList {
             this->deallocate();
         }
         this->length = length;
-        gpuErrchk(cudaMalloc(&this->d_a, length * sizeof(float)));
-        gpuErrchk(cudaMalloc(&this->d_b, length * sizeof(float)));
-        gpuErrchk(cudaMemset(this->d_a, 0, length * sizeof(float)));
-        gpuErrchk(cudaMemset(this->d_b, 0, length * sizeof(float)));
+        gpuErrchk(cudaMalloc(&this->d_id, length * sizeof(uint32_t)));
+        gpuErrchk(cudaMalloc(&this->d_x, length * sizeof(float)));
+        gpuErrchk(cudaMalloc(&this->d_y, length * sizeof(float)));
+        gpuErrchk(cudaMalloc(&this->d_z, length * sizeof(float)));
+        gpuErrchk(cudaMemset(this->d_x, 0, length * sizeof(uint32_t)));
+        gpuErrchk(cudaMemset(this->d_x, 0, length * sizeof(float)));
+        gpuErrchk(cudaMemset(this->d_y, 0, length * sizeof(float)));
+        gpuErrchk(cudaMemset(this->d_z, 0, length * sizeof(float)));
     };
 
     void deallocate() {
         NVTX_RANGE(__func__);
         this->length = 0;
-        if(this->d_a != nullptr) {
-            gpuErrchk(cudaFree(this->d_a));
-            this->d_a = nullptr;
+        if(this->d_id != nullptr) {
+            gpuErrchk(cudaFree(this->d_id));
+            this->d_id = nullptr;
         }
-        if(this->d_b != nullptr) {
-            gpuErrchk(cudaFree(this->d_b));
-            this->d_b = nullptr;
+        if(this->d_x != nullptr) {
+            gpuErrchk(cudaFree(this->d_x));
+            this->d_x = nullptr;
+        }
+        if(this->d_y != nullptr) {
+            gpuErrchk(cudaFree(this->d_y));
+            this->d_y = nullptr;
+        }
+        if(this->d_z != nullptr) {
+            gpuErrchk(cudaFree(this->d_z));
+            this->d_z = nullptr;
         }
     };
 };
@@ -215,11 +248,15 @@ __global__ void agentOutput(const uint32_t AGENT_COUNT, const curve::Curve::Vari
     for (uint32_t idx = (blockDim.x * blockIdx.x) + threadIdx.x; idx < AGENT_COUNT; idx += blockDim.x) {
         // Read the individuals values of a and b.
         // @todo - getAgnet / getMessage isnt' required outside of flamegpu's curve
-        float a = curve::Curve::getAgentVariable<float>(A, AGENT_HASH, idx);
-        float b = curve::Curve::getAgentVariable<float>(B, AGENT_HASH, idx);
+        uint32_t id = curve::Curve::getAgentVariable<float>("id", AGENT_HASH, idx);
+        float x = curve::Curve::getAgentVariable<float>("x", AGENT_HASH, idx);
+        float y = curve::Curve::getAgentVariable<float>("y", AGENT_HASH, idx);
+        float z = curve::Curve::getAgentVariable<float>("z", AGENT_HASH, idx);
         // Write them out to the message locations
-        curve::Curve::setMessageVariable<float>(A, MESSAGE_HASH, a, idx);
-        curve::Curve::setMessageVariable<float>(B, MESSAGE_HASH, b, idx);
+        curve::Curve::setMessageVariable<float>("id", MESSAGE_HASH, id, idx);
+        curve::Curve::setMessageVariable<float>("x", MESSAGE_HASH, x, idx);
+        curve::Curve::setMessageVariable<float>("y", MESSAGE_HASH, y, idx);
+        curve::Curve::setMessageVariable<float>("z", MESSAGE_HASH, z, idx);
         // Report curve errors from the device. This has been replaced in FLAME GPU 2's curve?
         // curveReportLastDeviceError(); // @todo - replace error checking
     }
@@ -232,21 +269,48 @@ __global__ void agentOutput(const uint32_t AGENT_COUNT, const curve::Curve::Vari
 __global__ void agentInput(const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT, const curve::Curve::VariableHash AGENT_HASH, const curve::Curve::VariableHash MESSAGE_HASH) {
     // Grid stride loop over the problem size
     for (uint32_t idx = (blockDim.x * blockIdx.x) + threadIdx.x; idx < AGENT_COUNT; idx += blockDim.x) {
-        // thread local value for accumulation
-        float c = 0.0;
+        uint32_t agent_id = curve::Curve::getAgentVariable<float>("id", AGENT_HASH, idx);
+        const float REPULSE_FACTOR = G_REPULSE_FACTOR; // @todo store in curve environment namespace
+        const float RADIUS = G_RADIUS; // @todo store in curve environment namespace
+        float fx = 0.0;
+        float fy = 0.0;
+        float fz = 0.0;
+        const float x1 = curve::Curve::getAgentVariable<float>("x", AGENT_HASH, idx);
+        const float y1 = curve::Curve::getAgentVariable<float>("y", AGENT_HASH, idx);
+        const float z1 = curve::Curve::getAgentVariable<float>("z", AGENT_HASH, idx);
+        int count = 0;
         // Mock message iteration loop
         for (uint32_t messageIdx = 0; messageIdx < MESSAGE_COUNT; messageIdx++) {
-            // Read values from messages
-            // @todo - getAgnet / getMessage isnt' required outside of flamegpu's curve
-            float message_a = curve::Curve::getAgentVariable<float>(A, MESSAGE_HASH, messageIdx);
-            float message_b = curve::Curve::getAgentVariable<float>(B, MESSAGE_HASH, messageIdx);
-            // Accumulate into the c value
-            c += (message_a + message_b);
+            const uint32_t message_id = curve::Curve::getMessageVariable<float>("z", MESSAGE_HASH, idx);
+            if (message_id != agent_id) {
+                const float x2 = curve::Curve::getMessageVariable<float>("id", MESSAGE_HASH, idx);
+                const float y2 = curve::Curve::getMessageVariable<float>("x", MESSAGE_HASH, idx);
+                const float z2 = curve::Curve::getMessageVariable<float>("y", MESSAGE_HASH, idx);
+                float x21 = x2 - x1;
+                float y21 = y2 - y1;
+                float z21 = z2 - z1;
+                const float separation = sqrtf(x21*x21 + y21*y21 + z21*z21);
+                if (separation < RADIUS && separation > 0.0f) {
+                    float k = sinf((separation / RADIUS) * 3.141f * -2) * REPULSE_FACTOR;
+                    // Normalise without recalculating separation
+                    x21 /= separation;
+                    y21 /= separation;
+                    z21 /= separation;
+                    fx += k * x21;
+                    fy += k * y21;
+                    fz += k * z21;
+                    count++;
+                }
+            }
         }
-        // Normalise by the number of messages
-        c /= MESSAGE_COUNT;
+        fx /= count > 0 ? count : 1;
+        fy /= count > 0 ? count : 1;
+        fz /= count > 0 ? count : 1;
         // Write to the agent's individual data
-        curve::Curve::setAgentVariable<float>(C, AGENT_HASH, c, idx);
+        curve::Curve::setAgentVariable<float>("x", AGENT_HASH, x1 + fx, idx);
+        curve::Curve::setAgentVariable<float>("y", AGENT_HASH, y1 + fy, idx);
+        curve::Curve::setAgentVariable<float>("z", AGENT_HASH, z1 + fz, idx);
+        // curve::Curve::setAgentVariable<float>("drift", AGENT_HASH, sqrtf(fx*fx + fy*fy + fz*fz), idx);
         // Report curve errors from the device. This has been replaced in FLAME GPU 2's curve?
         // curveReportLastDeviceError();
     }
@@ -365,15 +429,18 @@ double initialiseData(const uint64_t SEED, MockPopulation &population) {
     // Start recording the time
     timer->start();
 
+    // Compute the environment width from the agent population
+    const float ENV_MAX = static_cast<float>(floor(cbrtf(population.length)));
+
     std::mt19937_64 prng(SEED);
-    std::uniform_real_distribution<float> a_dist(0.f, 1.f);
+    std::uniform_real_distribution<float> dist(0.f, ENV_MAX);
     // Initialise data
     for (uint32_t idx = 0u; idx < population.length; idx++)
 	{   
-    	float a = a_dist(prng);
-		float b = static_cast<float>(idx);
-        population.h_a[idx] = a;
-        population.h_b[idx] = b;
+        population.h_x[idx] = idx;
+        population.h_x[idx] = dist(prng);
+        population.h_y[idx] = dist(prng);
+        population.h_z[idx] = dist(prng);
 		// curveReportErrors(); // @todo - recent curve error reporting
 	}
 
@@ -410,20 +477,23 @@ double launchAgentOutput(MockPopulation &population, MockMessageList &messageLis
         // This is analgous to flamegpu::CUDAAgent::mapRuntimeVariables and flamegpu::CUDAMessage::mapWriteRuntimeVariables
         auto &curve = curve::Curve::getInstance(); 
         const unsigned int instance_id = 0; 
-        const curve::Curve::VariableHash agent_hash = curve::Curve::variableRuntimeHash("agent");
+        const curve::Curve::VariableHash agent_hash = curve::Curve::variableRuntimeHash(AGENT_NAME);
         const curve::Curve::VariableHash func_hash = curve::Curve::variableRuntimeHash("agentOutput");
         const curve::Curve::VariableHash agent_function_hash = agent_hash + func_hash + instance_id;
-        const curve::Curve::VariableHash message_hash = curve.variableRuntimeHash("message");
+        const curve::Curve::VariableHash message_hash = curve.variableRuntimeHash(MESSAGE_LIST_NAME);
         const curve::Curve::VariableHash agent_function_message_hash = agent_hash + func_hash + message_hash + instance_id;
 
         // const curve::Curve::VariableHash message_function_hash = agent_hash + func_hash + instance_id; // @todo
 
-        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_hash, population.d_a, sizeof(float), population.length);
-        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_hash, population.d_b, sizeof(float), population.length);
-        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(C) + agent_function_hash, population.d_c, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("id") + agent_function_hash, population.d_id, sizeof(uint32_t), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("x") + agent_function_hash, population.d_x, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("y") + agent_function_hash, population.d_y, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("z") + agent_function_hash, population.d_z, sizeof(float), population.length);
 
-        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_message_hash, messageList.d_a, sizeof(float), population.length);
-        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_message_hash, messageList.d_b, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("id") + agent_function_message_hash, messageList.d_id, sizeof(uint32_t), messageList.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("x") + agent_function_message_hash, messageList.d_x, sizeof(float), messageList.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("y") + agent_function_message_hash, messageList.d_y, sizeof(float), messageList.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("z") + agent_function_message_hash, messageList.d_z, sizeof(float), messageList.length);
 
         // update the device copy of curve.
         curve.updateDevice();
@@ -438,13 +508,15 @@ double launchAgentOutput(MockPopulation &population, MockMessageList &messageLis
         gpuErrchk(cudaDeviceSynchronize());
 
         // Unregister curve
-        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_hash);
-        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_hash);
-        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(C) + agent_function_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("id") + agent_function_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("x") + agent_function_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("y") + agent_function_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("z") + agent_function_hash);
 
-        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_message_hash);
-        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_message_hash);
-
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("id") + agent_function_message_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("x") + agent_function_message_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("y") + agent_function_message_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("z") + agent_function_message_hash);
     }
 
     // Report any curve errors
@@ -482,18 +554,23 @@ double launchAgentInput(const uint32_t MESSAGE_COUNT, MockPopulation &population
         // This is analgous to flamegpu::CUDAAgent::mapRuntimeVariables
         auto &curve = curve::Curve::getInstance(); 
         const unsigned int instance_id = 0; 
-        const curve::Curve::VariableHash agent_hash = curve::Curve::variableRuntimeHash("agent");
+        const curve::Curve::VariableHash agent_hash = curve::Curve::variableRuntimeHash(AGENT_NAME);
         const curve::Curve::VariableHash func_hash = curve::Curve::variableRuntimeHash("agentInput");
         const curve::Curve::VariableHash agent_function_hash = agent_hash + func_hash + instance_id;
-        const curve::Curve::VariableHash message_hash = curve.variableRuntimeHash("message");
+        const curve::Curve::VariableHash message_hash = curve.variableRuntimeHash(MESSAGE_LIST_NAME);
         const curve::Curve::VariableHash agent_function_message_hash = agent_hash + func_hash + message_hash + instance_id;
 
-        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_hash, population.d_a, sizeof(float), population.length);
-        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_hash, population.d_b, sizeof(float), population.length);
-        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(C) + agent_function_hash, population.d_c, sizeof(float), population.length);
 
-        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_message_hash, messageList.d_a, sizeof(float), population.length);
-        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_message_hash, messageList.d_b, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("id") + agent_function_hash, population.d_id, sizeof(uint32_t), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("x") + agent_function_hash, population.d_x, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("y") + agent_function_hash, population.d_y, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("z") + agent_function_hash, population.d_z, sizeof(float), population.length);
+
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("id") + agent_function_message_hash, messageList.d_id, sizeof(uint32_t), messageList.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("x") + agent_function_message_hash, messageList.d_x, sizeof(float), messageList.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("y") + agent_function_message_hash, messageList.d_y, sizeof(float), messageList.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash("z") + agent_function_message_hash, messageList.d_z, sizeof(float), messageList.length);
+
 
         // update the device copy of curve.
         curve.updateDevice();
@@ -508,12 +585,15 @@ double launchAgentInput(const uint32_t MESSAGE_COUNT, MockPopulation &population
         gpuErrchk(cudaDeviceSynchronize());
 
         // Unnmap curve
-        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_hash);
-        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_hash);
-        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(C) + agent_function_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("id") + agent_function_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("x") + agent_function_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("y") + agent_function_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("z") + agent_function_hash);
 
-        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_message_hash);
-        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_message_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("id") + agent_function_message_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("x") + agent_function_message_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("y") + agent_function_message_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash("z") + agent_function_message_hash);
     }
     // Report any curve errors
     // curveReportErrors(); // @todo - recent curve error reporting
@@ -771,7 +851,7 @@ int main(int argc, char * argv[]) {
             population.copyd2h();
             constexpr uint32_t VALIDATION_OUTPUT = 4;
             for(unsigned int idx = 0; idx < std::min(VALIDATION_OUTPUT, population.length); idx++) {
-                printf("Validation: %u: %f %f %f\n", idx, population.h_a[idx], population.h_b[idx], population.h_c[idx]);
+                printf("Validation: %u: %f %f %f\n", idx, population.h_x[idx], population.h_y[idx], population.h_z[idx]);
             }
         }
 
