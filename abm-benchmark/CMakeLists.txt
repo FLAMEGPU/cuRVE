@@ -1,7 +1,7 @@
 # Minimum CMake version 3.18 for CUDA --std=c++17 and findCUDAToolkit
 cmake_minimum_required(VERSION VERSION 3.18 FATAL_ERROR)
 
-project(benchmark LANGUAGES CXX CUDA)
+project(abm-benchmark LANGUAGES CXX CUDA)
 
 # Define the list of sources 
 # Define include and source files/dirs

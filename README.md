@@ -9,6 +9,10 @@
 The CUDA Runtime Variable Environment (curRVE) is a library which provides key-value memory management and access for CUDA global device memory.
 
 GPU device memory can be registered and values set in host code using a constant string expression key via the the cuRVE API. For example the following initialises and sets the value of three cuRVE variables.
+
+## cuRVE Usage
+
+> @todo - removed due to updates, see examples for now.
 <!-- 
 ```cuda
 curveInit(VECTOR_ELEMENTS);
@@ -76,10 +80,14 @@ curveReportDeviceError(); //Device API function outputs the last device API erro
 
 The cuRVE header file is commented using doxygen format comments.
 
-## Building the Example
+## Building the included examples
 
 cuRVE uses [CMake](https://cmake.org/), as a cross-platform process, for configuring and generating build directives, e.g. `Makefile` or `.vcxproj`.
 This is used to build the cuRVE library and example(s).
+
++ `example` contains a simple example showing vector addition via cuRVE.
++ `abm-benchmark` contains an ABM-like benchmark miniapp, demonstrating the rough pattern of use as found in FLAME GPU 2. 
+  + See the `abm-benchmark/readme.md` for more information
 
 ### Requirements
 
@@ -106,20 +114,18 @@ Building via CMake is a three step process, with slight differences depending on
 
 To build under Linux using the command line, you can perform the following steps.
 
-For example, to configure CMake for `Release` builds, for consumer Pascal GPUs (Compute Capability `61`), with python bindings enabled, producing the static library and `boids_bruteforce` example binary.
-
 ```bash
 # Create the build directory and change into it
 mkdir -p build && cd build
 
-# Configure CMake from the command line passing configure-time options. 
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCUDA_ARCH=61 -DBUILD_SWIG_PYTHON=ON
+# Configure CMake from the command line passing configure-time options, i.e. a release config for Consumer Pascal GPUs
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCUDA_ARCH=61
 
-# Build the required targets. In this case all targets
-cmake --build . --target flamegpu boids_bruteforce -j 8
+# Build all targets
+cmake --build . --target all -j `nproc`
 
-# Alternatively make can be invoked directly
-make flamegpu boids_bruteforce -j8
+# Build the required target(s), i.e. abm-benchmark.
+cmake --build . --target abm-benchmark -j 8
 
 ```
 
@@ -128,31 +134,32 @@ make flamegpu boids_bruteforce -j8
 Under Windows, you must instruct CMake on which Visual Studio and architecture to build for, using the CMake `-A` and `-G` options.
 This can be done through the GUI or the CLI.
 
-I.e. to configure CMake for consumer Pascal GPUs (Compute Capability `61`), with python bindings enabled, and build the producing the static library and `boids_bruteforce` example binary in the Release configuration:
 
 ```cmd
 REM Create the build directory 
 mkdir build
 cd build
 
-REM Configure CMake from the command line, specifying the -A and -G options. Alternatively use the GUI
-cmake .. -A x64 -G "Visual Studio 16 2019" -DCUDA_ARCH=61 -DBUILD_SWIG_PYTHON=ON
+REM Configure CMake from the command line, specifying the -A and -G options. Alternatively use the GUI. In this case for consumer Pascal GPUs
+cmake .. -A x64 -G "Visual Studio 16 2019" -DCUDA_ARCH=61
 
 REM You can then open Visual Studio manually from the .sln file, or via:
 cmake --open . 
 REM Alternatively, build from the command line specifying the build configuration
-cmake --build . --config Release --target flamegpu boids_bruteforce --verbose
+cmake --build . --config Release --target ALL_BUILD --verbose
 ```
 
 #### CMake Configuration Options
 
-| Option                   | Value                                           | Description                                                                                                                                          |
-| ------------------------ | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CMAKE_BUILD_TYPE`       | `Release`/`Debug`/`MinSizeRel`/`RelWithDebInfo` | Select the build configuration for single-target generators such as `make`                                                                           |
-| `CUDA_ARCH`              | `"52 60 70 80"`                                 | Select [CUDA Compute Capabilities](https://developer.nvidia.com/cuda-gpus) to build/optimise for, as a space or `;` separated list. Defaults to `""` |
-| `USE_NVTX`               | `ON`/`OFF`                                      | Enable NVTX markers for improved profiling. Default `OFF`                                                                                            |
-| `WARNINGS_AS_ERRORS`     | `ON`/`OFF`                                      | Promote compiler/tool warnings to errors are build time. Default `OFF`                                                                               |
-| `VERBOSE_PTXAS`          | `ON`/`OFF`                                      | Enable verbose PTXAS output. Default `OFF`                                                                               |
+| Option                   | Value                                           | Description                                                                          |
+| ------------------------ | ----------------------------------------------- | -------------------------------------------------------------------------------------|
+| `CMAKE_BUILD_TYPE`       | `Release`/`Debug`/`MinSizeRel`/`RelWithDebInfo` | Select the build configuration for single-target generators such as `make`           |
+| `CUDA_ARCH`              | `"52 60 70 80"`                                 | Select [CUDA Compute Capabilities](https://developer.nvidia.com/cuda-gpus) to build. |
+| `USE_NVTX`               | `ON`/`OFF`                                      | Enable NVTX markers for improved profiling. Default `OFF`                            |
+| `WARNINGS_AS_ERRORS`     | `ON`/`OFF`                                      | Promote compiler/tool warnings to errors are build time. Default `OFF`               |
+| `VERBOSE_PTXAS`          | `ON`/`OFF`                                      | Enable verbose PTXAS output. Default `OFF`                                           |
+| `BUILD_EXAMPLE`          | `ON`/`OFF`                                      | Build the simple example model. Default `ON`                                         |
+| `BUILD_ABM_BENCHMARK`    | `ON`/`OFF`                                      | Build the abm-like benchmark miniapp. Default `ON`                                   |
 
 For a list of available CMake configuration options, run the following from the `build` directory:
 
@@ -167,6 +174,7 @@ cmake -LH ..
 | `all`          | Linux target containing default set of targets |
 | `ALL_BUILD`    | The windows/MSVC equivalent of `all`           |
 | `cuRVE`        | Build cuRVE static library                     |
+| `abm-benchmark`| An ABM-like miniapp for benchmarking           |
 | `example`      | Build `example` demonstrating use of cuRVE     |
 
 For a full list of available targets, run the following after configuring CMake:

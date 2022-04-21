@@ -32,7 +32,7 @@ endif()
 option(BUILD_EXAMPLE "Build the simple example demonstrating use of cuRVE" ON)
 
 # Option to enable/disable NVTX markers for improved profiling
-option(BUILD_BENCHMARK "Build the benchmark example demonstrating performance in an ABM-like use-case" ON)
+option(BUILD_ABM_BENCHMARK "Build the abm-benchmark agent based model-like benchmark miniapp" ON)
 
 # Option to enable/disable NVTX markers for improved profiling
 option(USE_NVTX "Build with NVTX markers enabled" ON)
@@ -48,12 +48,12 @@ add_subdirectory(src "${PROJECT_BINARY_DIR}/cuRVE")
 # Set as startup project
 set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"  PROPERTY VS_STARTUP_PROJECT cuRVE)
 
+# Add the benchmark as a separate subdirectory / target
+if(BUILD_ABM_BENCHMARK)
+    add_subdirectory(abm-benchmark)
+endif()
+
 # Add the example as a separate subdirectory
 if(BUILD_EXAMPLE)
     add_subdirectory(example)
-endif()
-
-# Add the benchmark as a separate subdirectory / target
-if(BUILD_BENCHMARK)
-    add_subdirectory(benchmark)
 endif()
