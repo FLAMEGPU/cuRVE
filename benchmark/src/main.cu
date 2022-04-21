@@ -4,6 +4,17 @@
  * This contains a becnhmark of cuRVE, mirroring the usage of cuRVE wihin FLAME GPU 2. 
  * It is structured to mirror an agent based model using global communication. 
  * In FLAME GPU 2 terminology, this is mocking a model running for N iterations, with M agents which each read M messages per iteration to perfom some local behaviour.
+ * 
+ * @todo list:
+ * + Add erorr checking
+ * + Add validation
+ * + Clean up / refactor 
+ *   + MockSimulation class to reduce repeatedly passed parameters
+ *   + Split out curve mapping / unmapping
+ * + Expand mock agent pop / mock 
+ * + Standalone curve tests outside of this?
+ * + Add reference non-curve implementation for performance comparison
+ *   + Unlikely in the immediate future
  */
 
 #include <cstdio>
@@ -47,28 +58,170 @@ namespace {
 
 // Define constant expression string literals for commonly used variables to pass around.
 // I would much rather these be constexpr strings, but the relaxed constexpr flag wasn't cooperating
-#define AGENT_A "a"
-#define AGENT_B "b"
-#define AGENT_C "c"
-// @todo - more recent curve writes messages to a different namespace? Need to check this difference.
-#define MESSAGE_A "m_a"
-#define MESSAGE_B "m_b"
+#define A "a"
+#define B "b"
+#define C "c"
+
+/**
+ * Class to mock a population of agents, storing agent data SoA-like. This is only used on the host
+ */
+class MockPopulation {
+ public:
+    uint32_t length = 0;
+    float * h_a = nullptr;
+    float * h_b = nullptr;
+    float * h_c = nullptr;
+    float * d_a = nullptr;
+    float * d_b = nullptr;
+    float * d_c = nullptr;
+
+    MockPopulation(const uint32_t length) :
+        length(0),
+        h_a(nullptr),
+        h_b(nullptr),
+        h_c(nullptr),
+        d_a(nullptr),
+        d_b(nullptr),
+        d_c(nullptr) {
+        this->allocate(length);
+    }
+
+    ~MockPopulation() {
+        this->deallocate();
+    }
+
+    void allocate(const uint32_t length) {
+        NVTX_RANGE(__func__);
+        if (length != 0) {
+            this->deallocate();
+        }
+        this->length = length;
+        this->h_a = static_cast<float*>(std::malloc(length * sizeof(float)));
+        this->h_b = static_cast<float*>(std::malloc(length * sizeof(float)));
+        this->h_c = static_cast<float*>(std::malloc(length * sizeof(float)));
+        memset(this->h_a, 0, length * sizeof(float));
+        memset(this->h_b, 0, length * sizeof(float));
+        memset(this->h_c, 0, length * sizeof(float));
+
+        gpuErrchk(cudaMalloc(&this->d_a, length * sizeof(float)));
+        gpuErrchk(cudaMalloc(&this->d_b, length * sizeof(float)));
+        gpuErrchk(cudaMalloc(&this->d_c, length * sizeof(float)));
+
+        gpuErrchk(cudaMemset(this->d_a, 0, length * sizeof(float)));
+        gpuErrchk(cudaMemset(this->d_b, 0, length * sizeof(float)));
+        gpuErrchk(cudaMemset(this->d_c, 0, length * sizeof(float)));
+    };
+
+    void deallocate() {
+        NVTX_RANGE(__func__);
+        this->length = 0;
+        if(this->h_a != nullptr) {
+            std::free(this->h_a);
+            this->h_a = nullptr;
+        }
+        if(this->h_b != nullptr) {
+            std::free(this->h_b);
+            this->h_b = nullptr;
+        }
+        if(this->h_c != nullptr) {
+            std::free(this->h_c);
+            this->h_c = nullptr;
+        }
+        if(this->d_a != nullptr) {
+            gpuErrchk(cudaFree(this->d_a));
+            this->d_a = nullptr;
+        }
+        if(this->d_b != nullptr) {
+            gpuErrchk(cudaFree(this->d_b));
+            this->d_b = nullptr;
+        }
+        if(this->d_c != nullptr) {
+            gpuErrchk(cudaFree(this->d_c));
+            this->d_c = nullptr;
+        }
+    };
+
+    void copyh2d() {
+        NVTX_RANGE(__func__);
+        if(length > 0) {
+            gpuErrchk(cudaMemcpy(d_a, h_a, length * sizeof(float), cudaMemcpyHostToDevice));
+            gpuErrchk(cudaMemcpy(d_b, h_b, length * sizeof(float), cudaMemcpyHostToDevice));
+            gpuErrchk(cudaMemcpy(d_c, h_c, length * sizeof(float), cudaMemcpyHostToDevice));
+        }
+    }
+    void copyd2h() {
+        NVTX_RANGE(__func__);
+        if(length > 0) {
+            gpuErrchk(cudaMemcpy(h_a, d_a, length * sizeof(float), cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(h_b, d_b, length * sizeof(float), cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(h_c, d_c, length * sizeof(float), cudaMemcpyDeviceToHost));
+        }
+    }
+};
+
+/**
+ * Class to mock a message list of agents, storing agent data SoA-like. This is only used on the host
+ */
+class MockMessageList {
+ public:
+    uint32_t length = 0;
+    float * d_a = nullptr;
+    float * d_b = nullptr;
+
+    MockMessageList(const uint32_t length) :
+        length(0),
+        d_a(nullptr),
+        d_b(nullptr) {
+        this->allocate(length);
+    }
+
+    ~MockMessageList() {
+        this->deallocate();
+    }
+
+    void allocate(const uint32_t length) {
+        NVTX_RANGE(__func__);
+        if (length != 0) {
+            this->deallocate();
+        }
+        this->length = length;
+        gpuErrchk(cudaMalloc(&this->d_a, length * sizeof(float)));
+        gpuErrchk(cudaMalloc(&this->d_b, length * sizeof(float)));
+        gpuErrchk(cudaMemset(this->d_a, 0, length * sizeof(float)));
+        gpuErrchk(cudaMemset(this->d_b, 0, length * sizeof(float)));
+    };
+
+    void deallocate() {
+        NVTX_RANGE(__func__);
+        this->length = 0;
+        if(this->d_a != nullptr) {
+            gpuErrchk(cudaFree(this->d_a));
+            this->d_a = nullptr;
+        }
+        if(this->d_b != nullptr) {
+            gpuErrchk(cudaFree(this->d_b));
+            this->d_b = nullptr;
+        }
+    };
+};
+
 
 /**
  * Mock agent message output function
  * Each individual writes out it's personal data to global memory via curve
  */
-__global__ void agentOutput(const uint32_t AGENT_COUNT) {
+__global__ void agentOutput(const uint32_t AGENT_COUNT, const curve::Curve::VariableHash AGENT_HASH, const curve::Curve::VariableHash MESSAGE_HASH) {
     // Grid stride loop over the problem size
     for (uint32_t idx = (blockDim.x * blockIdx.x) + threadIdx.x; idx < AGENT_COUNT; idx += blockDim.x) {
         // Read the individuals values of a and b.
-        float a = getFloatVariable(AGENT_A, idx);
-        float b = getFloatVariable(AGENT_B, idx);
+        // @todo - getAgnet / getMessage isnt' required outside of flamegpu's curve
+        float a = curve::Curve::getAgentVariable<float>(A, AGENT_HASH, idx);
+        float b = curve::Curve::getAgentVariable<float>(B, AGENT_HASH, idx);
         // Write them out to the message locations
-        setFloatVariable(MESSAGE_A, a, idx);
-        setFloatVariable(MESSAGE_B, b, idx);
+        curve::Curve::setMessageVariable<float>(A, MESSAGE_HASH, a, idx);
+        curve::Curve::setMessageVariable<float>(B, MESSAGE_HASH, b, idx);
         // Report curve errors from the device. This has been replaced in FLAME GPU 2's curve?
-        curveReportLastDeviceError();
+        // curveReportLastDeviceError(); // @todo - replace error checking
     }
 }
 
@@ -76,7 +229,7 @@ __global__ void agentOutput(const uint32_t AGENT_COUNT) {
  * Mock agent message input/iteration function
  * Each individual reads data in from each message, does some operations with it, then writes it out to global memory via curve
  */
-__global__ void agentInput(const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT) {
+__global__ void agentInput(const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT, const curve::Curve::VariableHash AGENT_HASH, const curve::Curve::VariableHash MESSAGE_HASH) {
     // Grid stride loop over the problem size
     for (uint32_t idx = (blockDim.x * blockIdx.x) + threadIdx.x; idx < AGENT_COUNT; idx += blockDim.x) {
         // thread local value for accumulation
@@ -84,17 +237,18 @@ __global__ void agentInput(const uint32_t AGENT_COUNT, const uint32_t MESSAGE_CO
         // Mock message iteration loop
         for (uint32_t messageIdx = 0; messageIdx < MESSAGE_COUNT; messageIdx++) {
             // Read values from messages
-            float message_a = getFloatVariable(MESSAGE_A, messageIdx);
-            float message_b = getFloatVariable(MESSAGE_B, messageIdx);
+            // @todo - getAgnet / getMessage isnt' required outside of flamegpu's curve
+            float message_a = curve::Curve::getAgentVariable<float>(A, MESSAGE_HASH, messageIdx);
+            float message_b = curve::Curve::getAgentVariable<float>(B, MESSAGE_HASH, messageIdx);
             // Accumulate into the c value
             c += (message_a + message_b);
         }
         // Normalise by the number of messages
         c /= MESSAGE_COUNT;
         // Write to the agent's individual data
-        setFloatVariable(AGENT_C, c, idx);
+        curve::Curve::setAgentVariable<float>(C, AGENT_HASH, c, idx);
         // Report curve errors from the device. This has been replaced in FLAME GPU 2's curve?
-        curveReportLastDeviceError();
+        // curveReportLastDeviceError();
     }
 }
 
@@ -174,31 +328,24 @@ std::tuple<cudaFuncAttributes, cudaFuncAttributes> getKernelAttributes() {
     return {agentOutputAttributes, agentInputAttributes};
 }
 
-
 /**
  * Initialise cuRVE with the namespace, and register all variables required
  * @param AGENT_COUNT the number of agents to allow within cuRVE
  * @return elapsed time in seconds
  */
-double initialiseCuRVE(const uint32_t AGENT_COUNT) {
+double initialiseCuRVE() {
     NVTX_RANGE(__func__);
     // Get a timer
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
     // Start recording the time
     timer->start();
 
-    // Initialise curve
-    curveInit(AGENT_COUNT);
-    // Set the curve namespace
-    curveSetNamespace("name1");
-    // Registar all variables with curve
-    curveRegisterVariable(AGENT_A);
-    curveRegisterVariable(AGENT_B);
-    curveRegisterVariable(AGENT_C);
-    curveRegisterVariable(MESSAGE_A);
-    curveRegisterVariable(MESSAGE_B);
+    // Initialise curve via purging
+    auto &curve = curve::Curve::getInstance(); 
+    curve.purge();
+
     // Report any errors to stdout/stdderr?
-    curveReportErrors();
+    // curveReportErrors(); // @todo - recent curve error reporting
 
     // Capture the elapsed time and return
     timer->stop();
@@ -209,10 +356,10 @@ double initialiseCuRVE(const uint32_t AGENT_COUNT) {
 /**
  * Generate initial data using seeded PRNG, for a given agent count.
  * @param SEED the PRNG seed
- * @param AGENT_COUNT the number agents to initialise data for
+ * @param population reference to class instance containing host pointers.
  * @return elapsed time in seconds
  */ 
-double initialiseData(const uint64_t SEED, const uint32_t AGENT_COUNT) {
+double initialiseData(const uint64_t SEED, MockPopulation &population) {
     NVTX_RANGE(__func__);
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
     // Start recording the time
@@ -221,17 +368,17 @@ double initialiseData(const uint64_t SEED, const uint32_t AGENT_COUNT) {
     std::mt19937_64 prng(SEED);
     std::uniform_real_distribution<float> a_dist(0.f, 1.f);
     // Initialise data
-    for (uint32_t idx = 0u; idx < AGENT_COUNT; idx++)
+    for (uint32_t idx = 0u; idx < population.length; idx++)
 	{   
     	float a = a_dist(prng);
 		float b = static_cast<float>(idx);
-    	curveSetFloat(AGENT_A, a, idx);
-		curveSetFloat(AGENT_B, b, idx);
-		curveSetFloat(AGENT_C, 0, idx);
-		curveSetFloat(MESSAGE_A, 0, idx);
-		curveSetFloat(MESSAGE_B, 0, idx);
-		curveReportErrors();
+        population.h_a[idx] = a;
+        population.h_b[idx] = b;
+		// curveReportErrors(); // @todo - recent curve error reporting
 	}
+
+    // Copy data to the device.
+    population.copyh2d();
 
     // Capture the elapsed time and return
     timer->stop();
@@ -241,32 +388,67 @@ double initialiseData(const uint64_t SEED, const uint32_t AGENT_COUNT) {
 
 /**
  * Launch the kernel which mocks up agent message output
- * @param AGENT_COUNT the number of agents (i.e. active threads)
+ * @param population reference to class instance containing host pointers.
+ * @param messageList reference to class instance containing host pointers.
  * @return the elapsed time in seconds
  */
-double launchAgentOutput(const uint32_t AGENT_COUNT) {
+double launchAgentOutput(MockPopulation &population, MockMessageList &messageList) {
     NVTX_RANGE(__func__);
     // Get a timer
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
     // Start recording the time
     timer->start();
+    if (population.length > 0) {
+        // Compute launch bounds via occupancy API
+        int blockSize = 0;
+        int minGridSize = 0;
+        int gridSize = 0;
+        cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, agentOutput, 0, population.length);
+        gridSize = (population.length + blockSize - 1) / blockSize;
 
-    // Compute launch bounds via occupancy API
-    int blockSize = 0;
-    int minGridSize = 0;
-    int gridSize = 0;
-    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, agentOutput, 0, AGENT_COUNT);
-    gridSize = (AGENT_COUNT + blockSize - 1) / blockSize;
+        // Map the curve runtime variables
+        // This is analgous to flamegpu::CUDAAgent::mapRuntimeVariables and flamegpu::CUDAMessage::mapWriteRuntimeVariables
+        auto &curve = curve::Curve::getInstance(); 
+        const unsigned int instance_id = 0; 
+        const curve::Curve::VariableHash agent_hash = curve::Curve::variableRuntimeHash("agent");
+        const curve::Curve::VariableHash func_hash = curve::Curve::variableRuntimeHash("agentOutput");
+        const curve::Curve::VariableHash agent_function_hash = agent_hash + func_hash + instance_id;
+        const curve::Curve::VariableHash message_hash = curve.variableRuntimeHash("message");
+        const curve::Curve::VariableHash agent_function_message_hash = agent_hash + func_hash + message_hash + instance_id;
 
-    // Launch the kernel
-    agentOutput<<<gridSize, blockSize>>>(AGENT_COUNT);
-    gpuErrchkLaunch();
+        // const curve::Curve::VariableHash message_function_hash = agent_hash + func_hash + instance_id; // @todo
 
-    // Synchronize the device 
-    gpuErrchk(cudaDeviceSynchronize());
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_hash, population.d_a, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_hash, population.d_b, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(C) + agent_function_hash, population.d_c, sizeof(float), population.length);
+
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_message_hash, messageList.d_a, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_message_hash, messageList.d_b, sizeof(float), population.length);
+
+        // update the device copy of curve.
+        curve.updateDevice();
+        // Sync prior to kernel launch if streams are used. If multithreaded single cotnext rdc, const cache curve symbols must be protected while kernels are in flight.
+        gpuErrchk(cudaDeviceSynchronize());
+
+        // Launch the kernel
+        agentOutput<<<gridSize, blockSize>>>(population.length, agent_function_hash, agent_function_message_hash);
+        gpuErrchkLaunch();
+
+        // Synchronize the device 
+        gpuErrchk(cudaDeviceSynchronize());
+
+        // Unregister curve
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(C) + agent_function_hash);
+
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_message_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_message_hash);
+
+    }
 
     // Report any curve errors
-    curveReportErrors();
+    // curveReportErrors(); // @todo - recent curve error reporting
 
     // Record the stop event
     timer->stop();
@@ -276,33 +458,65 @@ double launchAgentOutput(const uint32_t AGENT_COUNT) {
 
 /**
  * Launch the kernel which mocks up brute force agent message input 
- * @param AGENT_COUNT the number of agents (i.e. active threads)
  * @param MESSAGE_COUNT the number of messages (if population sizes grow too large, to improve runtime without reducing occupancy)
+ * @param population reference to class instance containing host pointers.
+ * @param messageList reference to class instance containing host pointers.
  * @return the elapsed time in seconds
  */
-double launchAgentInput(const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT) {
+double launchAgentInput(const uint32_t MESSAGE_COUNT, MockPopulation &population, MockMessageList &messageList) {
     NVTX_RANGE(__func__);
     // Get a timer
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
     // Start recording the time
     timer->start();
 
-    // Compute launch bounds via occupancy API
-    int blockSize = 0;
-    int minGridSize = 0;
-    int gridSize = 0;
-    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, agentOutput, 0, AGENT_COUNT);
-    gridSize = (AGENT_COUNT + blockSize - 1) / blockSize;
+    if (population.length > 0) {
+        // Compute launch bounds via occupancy API
+        int blockSize = 0;
+        int minGridSize = 0;
+        int gridSize = 0;
+        cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, agentInput, 0, population.length);
+        gridSize = (population.length + blockSize - 1) / blockSize;
 
-    // Launch the kernel
-    agentInput<<<gridSize, blockSize>>>(AGENT_COUNT, MESSAGE_COUNT);
-    gpuErrchkLaunch();
+        // Map the curve runtime variables
+        // This is analgous to flamegpu::CUDAAgent::mapRuntimeVariables
+        auto &curve = curve::Curve::getInstance(); 
+        const unsigned int instance_id = 0; 
+        const curve::Curve::VariableHash agent_hash = curve::Curve::variableRuntimeHash("agent");
+        const curve::Curve::VariableHash func_hash = curve::Curve::variableRuntimeHash("agentInput");
+        const curve::Curve::VariableHash agent_function_hash = agent_hash + func_hash + instance_id;
+        const curve::Curve::VariableHash message_hash = curve.variableRuntimeHash("message");
+        const curve::Curve::VariableHash agent_function_message_hash = agent_hash + func_hash + message_hash + instance_id;
 
-    // Synchronize the device 
-    gpuErrchk(cudaDeviceSynchronize());
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_hash, population.d_a, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_hash, population.d_b, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(C) + agent_function_hash, population.d_c, sizeof(float), population.length);
 
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_message_hash, messageList.d_a, sizeof(float), population.length);
+        curve.registerVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_message_hash, messageList.d_b, sizeof(float), population.length);
+
+        // update the device copy of curve.
+        curve.updateDevice();
+        // Sync prior to kernel launch if streams are used. If multithreaded single cotnext rdc, const cache curve symbols must be protected while kernels are in flight.
+        gpuErrchk(cudaDeviceSynchronize());
+
+        // Launch the kernel
+        agentInput<<<gridSize, blockSize>>>(population.length, MESSAGE_COUNT, agent_function_hash, agent_function_message_hash);
+        gpuErrchkLaunch();
+
+        // Synchronize the device 
+        gpuErrchk(cudaDeviceSynchronize());
+
+        // Unnmap curve
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(C) + agent_function_hash);
+
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(A) + agent_function_message_hash);
+        curve.unregisterVariableByHash(curve::Curve::variableRuntimeHash(B) + agent_function_message_hash);
+    }
     // Report any curve errors
-    curveReportErrors();
+    // curveReportErrors(); // @todo - recent curve error reporting
 
     // Record the stop event
     timer->stop();
@@ -318,7 +532,7 @@ double launchAgentInput(const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT
  * @param VERBOSITY The degree of verbosity for output, 0 = none, 1 = verbose, 3 = very verbose
  * @return A tuple containing the simulation elapsed time in seconds, mean time per mock agent function and a vector of tuples, containing the per-iteration time and the per mock agent function per iteration.
  */ 
-std::tuple<double, double, double, std::vector<std::tuple<double, double>>> mockSimulation(const uint32_t ITERATIONS, const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT, const uint32_t VERBOSITY) {
+std::tuple<double, double, double, std::vector<std::tuple<double, double>>> mockSimulation(const uint32_t ITERATIONS, const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT, const uint32_t VERBOSITY, MockPopulation &population, MockMessageList &messageList) {
     NVTX_RANGE("__func__");
     // Get a timer
     std::unique_ptr<util::Timer> timer = getDriverAppropriateTimer();
@@ -331,10 +545,10 @@ std::tuple<double, double, double, std::vector<std::tuple<double, double>>> mock
     for (uint32_t iteration = 0; iteration < ITERATIONS; iteration++) {
         NVTX_RANGE("iteration " + std::to_string(iteration));
         // Run the mock message output function
-        double outputSeconds = launchAgentOutput(AGENT_COUNT);
+        double outputSeconds = launchAgentOutput(population, messageList);
 
         // Run the mock message input function
-        double inputSeconds = launchAgentInput(AGENT_COUNT, MESSAGE_COUNT);
+        double inputSeconds = launchAgentInput(MESSAGE_COUNT, population, messageList);
 
         // Record the times for later
         perIterationElapsed.push_back({outputSeconds, inputSeconds});
@@ -534,10 +748,14 @@ int main(int argc, char * argv[]) {
     for (uint32_t repetition = 0; repetition < args.REPETITIONS; repetition++) {
         NVTX_RANGE("repetition " + repetition);
         // Initialise curve
-        double initialiseCuRVESeconds = initialiseCuRVE(AGENT_COUNT);
+        double initialiseCuRVESeconds = initialiseCuRVE();
+
+        // Allocate host and device data, this should clean up after itself.
+        MockPopulation population(AGENT_COUNT);
+        MockMessageList messageList(AGENT_COUNT);
 
         // Re-seed the RNG and gnerate initial state
-        double initialiseDataSeconds = initialiseData(args.SEED, AGENT_COUNT);
+        double initialiseDataSeconds = initialiseData(args.SEED, population);
 
         // If verbose, output pre-simulation timing info. 
         if (args.VERBOSITY > 0) {
@@ -546,7 +764,16 @@ int main(int argc, char * argv[]) {
         }
 
         // Run the mock simulation
-        auto [mockSimulationSeconds, outputSecondsMean, inputSecondsMean, perIterationElapsed] = mockSimulation(args.ITERATIONS, AGENT_COUNT, MESSAGE_COUNT, args.VERBOSITY);
+        auto [mockSimulationSeconds, outputSecondsMean, inputSecondsMean, perIterationElapsed] = mockSimulation(args.ITERATIONS, AGENT_COUNT, MESSAGE_COUNT, args.VERBOSITY, population, messageList);
+
+        // Output some crude validation if verbose.
+        if (args.VERBOSITY > 0) {
+            population.copyd2h();
+            constexpr uint32_t VALIDATION_OUTPUT = 4;
+            for(unsigned int idx = 0; idx < std::min(VALIDATION_OUTPUT, population.length); idx++) {
+                printf("Validation: %u: %f %f %f\n", idx, population.h_a[idx], population.h_b[idx], population.h_c[idx]);
+            }
+        }
 
         // If verbose, output post-simulation timing info
         if (args.VERBOSITY > 0) {
