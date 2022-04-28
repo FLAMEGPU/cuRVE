@@ -14,6 +14,9 @@
 
 // #include <cuda_runtime.h>
 
+// Temp - define DTHROW as printf for now, only required in debug builds i.e when SEATBELTS is ON. 
+#define DTHROW printf
+
 #include <cstring>
 #include <cstdio>
 #ifndef __CUDACC_RTC__
