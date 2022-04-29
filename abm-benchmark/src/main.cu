@@ -75,7 +75,7 @@ class MockPopulation {
     float * h_y = nullptr;
     float * h_z = nullptr;
 
-    float * d_id = nullptr;
+    uint32_t * d_id = nullptr;
     float * d_x = nullptr;
     float * d_y = nullptr;
     float * d_z = nullptr;
@@ -437,7 +437,7 @@ double initialiseData(const uint64_t SEED, MockPopulation &population) {
     // Initialise data
     for (uint32_t idx = 0u; idx < population.length; idx++)
 	{   
-        population.h_x[idx] = idx;
+        population.h_id[idx] = idx;
         population.h_x[idx] = dist(prng);
         population.h_y[idx] = dist(prng);
         population.h_z[idx] = dist(prng);
