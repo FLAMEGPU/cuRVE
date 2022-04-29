@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <stdexcept>
+#include <string>
 
 #include "curve/curve.cuh"
 
