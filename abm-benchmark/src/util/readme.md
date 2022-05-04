@@ -1,0 +1,1 @@
+A number of utility classes based on equivalents from FALMEGPU/FLAMEGPU2, adapted to remove FLAME GPU 2 specific components / packaging

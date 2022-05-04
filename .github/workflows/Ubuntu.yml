@@ -1,0 +1,101 @@
+# Compile project on Ubuntu
+name: Ubuntu
+
+on:
+  # Branch pushes that do not only modify other workflow files
+  push:
+    branches:
+      - '**'
+    paths:
+      - "**"
+      - "!.github/**"
+      - ".github/scripts/install_cuda_ubuntu.sh"
+      - ".github/workflows/Ubuntu.yml"
+  # Allow manual invocation.
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ${{ matrix.cudacxx.os }}
+    strategy:
+      fail-fast: false
+      # Multiplicative build matrix
+      # optional exclude: can be partial, include: must be specific
+      matrix:
+        cudacxx:
+          # - cuda: "11.6"
+          #   cuda_arch: "35"
+          #   hostcxx: gcc-9
+          #   os: ubuntu-20.04
+          - cuda: "11.0"
+            cuda_arch: "35"
+            hostcxx: gcc-9
+            os: ubuntu-20.04
+        config:
+          - name: "Release"
+            config: "Release"
+            SEATBELTS: "ON"
+
+    # Name the job based on matrix/env options
+    name: "build (${{ matrix.cudacxx.cuda }}, ${{ matrix.config.name }}, ${{ matrix.cudacxx.os }})"
+
+    # Define job-wide env constants, and promote matrix elements to env constants for portable steps.
+    env:
+      # Define constants
+      BUILD_DIR: "build"
+      # BUILD_TESTS: "ON"
+      # Port matrix options to environment, for more portability.
+      CUDA: ${{ matrix.cudacxx.cuda }}
+      CUDA_ARCH: ${{ matrix.cudacxx.cuda_arch }}
+      HOSTCXX: ${{ matrix.cudacxx.hostcxx }}
+      OS: ${{ matrix.cudacxx.os }}
+      CONFIG: ${{ matrix.config.config }}
+      # SEATBELTS: ${{ matrix.config.SEATBELTS }}
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install CUDA
+      if: ${{ startswith(env.OS, 'ubuntu') && env.CUDA != '' }}
+      env:
+        cuda: ${{ env.CUDA }}
+      run: .github/scripts/install_cuda_ubuntu.sh
+
+    - name: Install/Select gcc and g++
+      if: ${{ startsWith(env.HOSTCXX, 'gcc-') }}
+      run: |
+        gcc_version=${HOSTCXX//gcc-/}
+        sudo apt-get install -y gcc-${gcc_version} g++-${gcc_version}
+        echo "CC=/usr/bin/gcc-${gcc_version}" >> $GITHUB_ENV
+        echo "CXX=/usr/bin/g++-${gcc_version}" >> $GITHUB_ENV
+        echo "CUDAHOSTCXX=/usr/bin/g++-${gcc_version}" >> $GITHUB_ENV
+
+    - name: Add custom problem matchers for annotations
+      run: echo "::add-matcher::.github/problem-matchers.json"
+
+    - name: Configure cmake
+      run: >
+        cmake . -B "${{ env.BUILD_DIR }}"
+        -DCMAKE_BUILD_TYPE="${{ env.CONFIG }}"
+        -Werror=dev
+        -DCMAKE_WARN_DEPRECATED="OFF" 
+        -DWARNINGS_AS_ERRORS="ON"
+        -DCUDA_ARCH="${{ env.CUDA_ARCH }}"
+        -DUSE_NVTX="ON"
+
+    - name: Build static library
+      working-directory: ${{ env.BUILD_DIR }}
+      run: cmake --build . --target cuRVE --verbose -j `nproc`
+
+    # - name: Build tests
+    #   if: ${{ env.BUILD_TESTS == 'ON' }}
+    #   working-directory: ${{ env.BUILD_DIR }}
+    #   run: cmake --build . --target tests --verbose -j `nproc`
+
+    - name: Build all remaining targets
+      working-directory: ${{ env.BUILD_DIR }}
+      run: cmake --build . --target all --verbose -j `nproc`
