@@ -269,23 +269,24 @@ __global__ void agentOutput(const uint32_t AGENT_COUNT, const curve::Curve::Vari
 __global__ void agentInput(const uint32_t AGENT_COUNT, const uint32_t MESSAGE_COUNT, const curve::Curve::VariableHash AGENT_HASH, const curve::Curve::VariableHash MESSAGE_HASH) {
     // Grid stride loop over the problem size
     for (uint32_t idx = (blockDim.x * blockIdx.x) + threadIdx.x; idx < AGENT_COUNT; idx += blockDim.x) {
-        uint32_t agent_id = curve::Curve::getAgentVariable<float>("id", AGENT_HASH, idx);
         const float REPULSE_FACTOR = G_REPULSE_FACTOR; // @todo store in curve environment namespace
         const float RADIUS = G_RADIUS; // @todo store in curve environment namespace
         float fx = 0.0;
         float fy = 0.0;
         float fz = 0.0;
+
+        const uint32_t agent_id = curve::Curve::getAgentVariable<uint32_t>("id", AGENT_HASH, idx);
         const float x1 = curve::Curve::getAgentVariable<float>("x", AGENT_HASH, idx);
         const float y1 = curve::Curve::getAgentVariable<float>("y", AGENT_HASH, idx);
         const float z1 = curve::Curve::getAgentVariable<float>("z", AGENT_HASH, idx);
         int count = 0;
         // Mock message iteration loop
         for (uint32_t messageIdx = 0; messageIdx < MESSAGE_COUNT; messageIdx++) {
-            const uint32_t message_id = curve::Curve::getMessageVariable<float>("z", MESSAGE_HASH, idx);
+            const uint32_t message_id = curve::Curve::getMessageVariable<uint32_t>("id", MESSAGE_HASH, messageIdx);
             if (message_id != agent_id) {
-                const float x2 = curve::Curve::getMessageVariable<float>("id", MESSAGE_HASH, idx);
-                const float y2 = curve::Curve::getMessageVariable<float>("x", MESSAGE_HASH, idx);
-                const float z2 = curve::Curve::getMessageVariable<float>("y", MESSAGE_HASH, idx);
+                const float x2 = curve::Curve::getMessageVariable<float>("x", MESSAGE_HASH, messageIdx);
+                const float y2 = curve::Curve::getMessageVariable<float>("y", MESSAGE_HASH, messageIdx);
+                const float z2 = curve::Curve::getMessageVariable<float>("z", MESSAGE_HASH, messageIdx);
                 float x21 = x2 - x1;
                 float y21 = y2 - y1;
                 float z21 = z2 - z1;
